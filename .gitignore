@@ -53,4 +53,44 @@ venv/
 
 # Logs
 logs/
-*.log 
+*.log
+
+# Python virtual environment
+.venv/
+env/
+venv/
+ENV/
+agenttoast-env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables
+.env
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Output files that are dynamic
+output/*
+!output/.gitkeep 

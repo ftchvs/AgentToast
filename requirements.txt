@@ -5,4 +5,8 @@ openai-agents>=0.0.8
 newsapi-python>=0.2.7
 pytest>=8.0.0
 python-jose>=3.3.0
-requests>=2.31.0 
+requests>=2.31.0
+
+# For audio processing and playback
+mpg123>=0.4  # For Linux audio playback
+# For Mac and Windows, no additional packages needed 
