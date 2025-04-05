@@ -1,114 +1,87 @@
 # AgentToast
 
-An AI-driven solution that delivers personalized audio digests of daily news using OpenAI's Agent SDK and text-to-speech capabilities.
+AgentToast is a Python application that converts daily news into audio summaries using OpenAI's GPT and Text-to-Speech capabilities, along with the NEWS API.
 
 ## Features
 
-- Automated news scraping from reliable sources
-- AI-powered summarization of news articles
-- High-quality text-to-speech conversion
-- Personalized news selection
-- Local storage of audio files and summaries in markdown format
+- Fetches top 5 news articles daily using NEWS API
+- Generates concise summaries using OpenAI GPT
+- Converts summaries to audio using OpenAI Text-to-Speech
+- Saves audio files organized by date
 
-## Project Structure
+## Prerequisites
 
-```
-agenttoast/
-├── agents/                 # OpenAI Agent implementations
-│   ├── news_scraper.py    # News scraping agent
-│   ├── summarizer.py      # Text summarization agent
-│   └── audio_gen.py       # Audio generation agent
-├── api/                   # FastAPI application
-│   ├── routes/           # API endpoints
-│   └── models/           # Pydantic models
-├── core/                  # Core application logic
-│   ├── config.py         # Configuration management
-│   ├── logger.py         # Logging configuration
-│   └── storage.py        # Local storage management
-├── tasks/                # Celery tasks
-│   ├── celery.py        # Celery configuration
-│   └── workers.py       # Task workers
-├── tests/               # Test suite
-└── utils/               # Utility functions
+- Python 3.8 or higher
+- NEWS API key (get it from [newsapi.org](https://newsapi.org))
+- OpenAI API key (get it from [platform.openai.com](https://platform.openai.com))
 
-storage/                 # Local storage directory
-├── audio/              # Generated audio files
-└── summaries/          # Markdown summaries
-```
-
-## Setup Instructions
+## Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/agenttoast.git
-   cd agenttoast
+   git clone https://github.com/yourusername/AgentToast.git
+   cd AgentToast
    ```
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
+2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Set up environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and configuration
+3. Create a `.env` file in the project root with your API keys:
+   ```
+   NEWS_API_KEY=your_news_api_key
+   OPENAI_API_KEY=your_openai_api_key
    ```
 
-5. Create storage directories:
-   ```bash
-   mkdir -p storage/audio storage/summaries
-   ```
+## Usage
 
-6. Start the development server:
-   ```bash
-   uvicorn agenttoast.api.main:app --reload
-   ```
+Run the main script to fetch news and generate audio summaries:
 
-7. Start Celery worker (in a new terminal):
-   ```bash
-   celery -A agenttoast.tasks.workers worker --loglevel=info
-   ```
+```bash
+python src/main.py
+```
 
-8. Start Celery beat (in a new terminal):
-   ```bash
-   celery -A agenttoast.tasks.workers beat --loglevel=info
-   ```
+Audio files will be saved in the `output/YYYY-MM-DD/` directory, organized by date.
 
-## Storage Structure
+## Testing
 
-- Audio files are stored in `storage/audio/` with the format: `{user_id}_{timestamp}.mp3`
-- Audio metadata is stored alongside audio files as JSON: `{audio_file}.json`
-- Summaries are stored in `storage/summaries/` as markdown files: `{user_id}_{timestamp}.md`
+Run the tests using pytest:
 
-## Development
+```bash
+pytest tests/
+```
 
-- Code formatting: `black .`
-- Import sorting: `isort .`
-- Type checking: `mypy .`
-- Run tests: `pytest`
-- Run test coverage: `pytest --cov=.`
+## Project Structure
 
-## API Documentation
+```
+AgentToast/
+├── src/
+│   ├── agents/
+│   │   └── news_agent.py
+│   └── main.py
+├── tests/
+│   └── test_news_agent.py
+├── output/
+│   └── YYYY-MM-DD/
+├── requirements.txt
+├── README.md
+└── .env
+```
 
-Once the server is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+## Limitations
 
-## Contributing
+- English language news only
+- Limited to top 5 news stories
+- Basic audio features
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+## Future Improvements
+
+- Support for more news stories
+- Category selection
+- Multiple voice options
+- Custom news sources
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+MIT 
