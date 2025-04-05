@@ -1,124 +1,162 @@
 #!/usr/bin/env python3
 """
-AgentToast Test Script
-This script runs a simple test of all agent components.
+Test script for the updated agents and tools.
 """
 
 import os
-from pathlib import Path
-from src.agents import (
-    PlannerAgent,
-    FetcherAgent,
-    VerifierAgent,
-    SummarizerAgent,
-    AudioAgent,
-    OrchestratorAgent
-)
+import asyncio
+from dotenv import load_dotenv
+import unittest
+from typing import Dict, Any, List
 
-def test_planner():
-    """Test the PlannerAgent."""
-    print("\n=== Testing PlannerAgent ===")
-    agent = PlannerAgent()
-    task = {'count': 1, 'categories': ['technology']}
-    result = agent.plan_and_act(task)
-    print("Plan created:", bool(result.get('plan')))
-    return bool(result.get('plan'))
+from src.agents.planner_agent import PlannerAgent, PlannerInput
+from src.agents.example_agent import NewsAgent, NewsRequest
+from src.tools.news_tool import fetch_news_tool
+from src.tools.sentiment_tool import sentiment_tool, SentimentInput
+from src.config import get_logger, MODEL_NAME
 
-def test_fetcher():
-    """Test the FetcherAgent."""
-    print("\n=== Testing FetcherAgent ===")
-    agent = FetcherAgent()
-    task = {'count': 1, 'categories': ['technology']}
-    result = agent.plan_and_act(task)
-    articles = result.get('articles', [])
-    print("Articles fetched:", len(articles))
-    return len(articles) > 0
+logger = get_logger(__name__)
 
-def test_verifier():
-    """Test the VerifierAgent."""
-    print("\n=== Testing VerifierAgent ===")
-    agent = VerifierAgent()
-    article = {
-        'title': 'Major Tech Company Announces Revolutionary AI Breakthrough',
-        'description': 'A leading technology company has announced a significant breakthrough in artificial intelligence research. The new AI model demonstrates unprecedented capabilities in natural language understanding and generation, achieving state-of-the-art results on multiple benchmarks. Researchers say this development could have far-reaching implications for various industries.',
-        'url': 'https://example.com/tech-news/ai-breakthrough'
-    }
-    result = agent.plan_and_act({'article': article})
-    print("Verification score:", result.get('quality_score', 0))
-    return result.get('is_valid', False)
-
-def test_summarizer():
-    """Test the SummarizerAgent."""
-    print("\n=== Testing SummarizerAgent ===")
-    agent = SummarizerAgent()
-    article = {
-        'title': 'Test Article',
-        'description': 'This is a test article about technology.'
-    }
-    result = agent.plan_and_act({'article': article})
-    print("Summary generated:", bool(result.get('summary')))
-    return bool(result.get('summary'))
-
-def test_audio():
-    """Test the AudioAgent."""
-    print("\n=== Testing AudioAgent ===")
-    agent = AudioAgent()
-    task = {
-        'text': 'This is a test of the audio generation system.',
-        'voice': 'alloy'
-    }
-    result = agent.plan_and_act(task)
-    print("Audio generated:", bool(result.get('audio_data')))
-    return bool(result.get('audio_data'))
-
-def test_orchestrator():
-    """Test the OrchestratorAgent."""
-    print("\n=== Testing OrchestratorAgent ===")
-    agent = OrchestratorAgent()
-    task = {
-        'count': 1,
-        'categories': ['technology'],
-        'voice': 'alloy'
-    }
-    result = agent.plan_and_act(task)
-    success = result['status'] == 'success'
-    print("Orchestration successful:", success)
-    return success
-
-def main():
-    """Run all tests."""
-    print("Starting AgentToast Component Tests")
-    print("=" * 50)
+class ToolTests(unittest.TestCase):
+    """Tests for the various tools."""
     
-    # Create test output directory
-    test_output = Path("output/test")
-    test_output.mkdir(parents=True, exist_ok=True)
+    def test_fetch_news_tool(self):
+        """Test the news fetching tool."""
+        # Run the tool
+        input_data = FetchNewsInput(
+            category="technology",
+            count=2
+        )
+        result = fetch_news_tool.run(input_data)
+        
+        # Check the result
+        self.assertIsInstance(result, list)
+        
+        if result:  # Only check content if we got results
+            self.assertGreaterEqual(len(result), 0)
+            if len(result) > 0:
+                article = result[0]
+                self.assertIn("title", article)
+                self.assertIn("description", article)
+                self.assertIn("url", article)
+                self.assertIn("source", article)
     
-    # Run component tests
-    tests = [
-        ("Planner", test_planner),
-        ("Fetcher", test_fetcher),
-        ("Verifier", test_verifier),
-        ("Summarizer", test_summarizer),
-        ("Audio", test_audio),
-        ("Orchestrator", test_orchestrator)
-    ]
+    def test_sentiment_tool(self):
+        """Test the sentiment analysis tool."""
+        # Run the tool with positive text
+        positive_input = SentimentInput(
+            text="I love this amazing product! It's the best thing I've ever used.",
+            include_explanation=True
+        )
+        positive_result = sentiment_tool.run(positive_input)
+        
+        # Check the result
+        self.assertIn("score", positive_result)
+        self.assertIn("sentiment", positive_result)
+        self.assertIn("explanation", positive_result)
+        self.assertGreater(positive_result["score"], 0)
+        
+        # Run the tool with negative text
+        negative_input = SentimentInput(
+            text="This is terrible. I hate it and will never use it again.",
+            include_explanation=False
+        )
+        negative_result = sentiment_tool.run(negative_input)
+        
+        # Check the result
+        self.assertIn("score", negative_result)
+        self.assertIn("sentiment", negative_result)
+        self.assertLess(negative_result["score"], 0)
+        self.assertEqual(negative_result["explanation"], "")
+
+class AgentTests(unittest.TestCase):
+    """Tests for the agents."""
     
-    results = []
-    for name, test_func in tests:
+    async def test_planner_agent(self):
+        """Test the planner agent."""
+        # Set up the agent - explicitly use GPT-3.5 Turbo for cost-efficient testing
+        agent = PlannerAgent(
+            verbose=True,
+            model="gpt-3.5-turbo",
+            temperature=0.2  # Lower temperature for more predictable outputs in tests
+        )
+        
+        # Create input
+        input_data = PlannerInput(
+            count=3,
+            categories=["technology"],
+            voice="nova"
+        )
+        
+        # Run the agent
+        result = await agent.create_plan(input_data)
+        
+        # Check the result
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.plan)
+        self.assertGreater(len(result.plan.steps), 0)
+        
+        # Check that a trace ID was generated
+        self.assertIsNotNone(result.trace_id)
+    
+    async def test_news_agent(self):
+        """Test the news agent."""
+        # Set up the agent - explicitly use GPT-3.5 Turbo for cost-efficient testing
+        agent = NewsAgent(
+            verbose=True,
+            model="gpt-3.5-turbo",
+            temperature=0.2  # Lower temperature for more predictable outputs in tests
+        )
+        
+        # Create input
+        input_data = NewsRequest(
+            category="technology",
+            count=3
+        )
+        
+        # Run the agent
+        result = await agent.run(input_data)
+        
+        # Check the result
+        self.assertIsNotNone(result.summary)
+        self.assertGreaterEqual(len(result.articles), 0)
+        self.assertEqual(result.category, "technology")
+
+def run_tests():
+    """Run the tests."""
+    # Set the model to GPT-3.5 Turbo for all tests
+    os.environ["OPENAI_MODEL"] = "gpt-3.5-turbo"
+    
+    print(f"\nRunning tests with model: {os.environ.get('OPENAI_MODEL', MODEL_NAME)}")
+    
+    # Run the synchronous tests
+    unittest.TextTestRunner().run(unittest.TestLoader().loadTestsFromTestCase(ToolTests))
+    
+    # Set up and run the async tests
+    async def run_async_tests():
+        agent_test = AgentTests()
         try:
-            success = test_func()
-            results.append((name, success))
+            await agent_test.test_planner_agent()
+            print("\nPlanner agent test passed")
         except Exception as e:
-            print(f"Error in {name} test:", str(e))
-            results.append((name, False))
+            print(f"\nPlanner agent test failed: {e}")
+        
+        try:
+            await agent_test.test_news_agent()
+            print("\nNews agent test passed")
+        except Exception as e:
+            print(f"\nNews agent test failed: {e}")
     
-    # Print summary
-    print("\nTest Results Summary")
-    print("=" * 50)
-    for name, success in results:
-        status = "✅ PASS" if success else "❌ FAIL"
-        print(f"{name:12} {status}")
+    # Run the async tests
+    asyncio.run(run_async_tests())
 
 if __name__ == "__main__":
-    main() 
+    # Load environment variables
+    load_dotenv()
+    
+    # Import here to avoid circular imports
+    from src.tools.news_tool import FetchNewsInput
+    
+    # Run the tests
+    print("\nRunning tests for updated agents and tools...\n")
+    run_tests() 

@@ -3,7 +3,7 @@
 ## 1. Introduction
 
 ### 1.1 Purpose
-AgentToast converts daily news into audio summaries using OpenAI Agent SDK and NEWS API.
+AgentToast converts daily news into audio summaries using OpenAI Agents SDK and NEWS API.
 
 ### 1.2 Target Audience
 Busy professionals who want to listen to news summaries
@@ -16,7 +16,7 @@ Busy professionals who want to listen to news summaries
 - Fetch top 5 news articles daily
 - Get headlines and content
 
-### 2.2 AI Processing (OpenAI Agent SDK)
+### 2.2 AI Processing (OpenAI Agents SDK)
 - Generate short summaries of articles
 - Convert summaries to audio
 
@@ -24,14 +24,14 @@ Busy professionals who want to listen to news summaries
 
 ## 3. Technical Stack
 - Python
-- OpenAI Agent SDK
+- OpenAI Agents SDK
 - NEWS API
 
 ---
 
 ## 4. MVP Features
 - Get daily news via NEWS API
-- Create summaries with OpenAI Agent
+- Create summaries with OpenAI Agents SDK
 - Generate audio output
 - Basic audio playback
 
