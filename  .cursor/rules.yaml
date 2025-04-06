@@ -1,0 +1,25 @@
+name: Lightweight Agent Rules
+description: Simplified rules for fast prototyping with OpenAI Agent SDK
+version: 0.1
+
+rules:
+  - name: Agent Setup
+    content: |
+      - Agents should extend `openai.agent.Agent` and define tools inline.
+      - Use `plan_and_act()` only when needed.
+
+  - name: Tools
+    content: |
+      - Define tools with a simple Pydantic input schema and a run() method.
+      - Keep tool functions under 50 lines.
+
+  - name: Code Style
+    content: |
+      - Use type hints.
+      - Keep each file under 200 lines for readability.
+      - Add basic docstrings.
+
+  - name: File Structure
+    content: |
+      - Use `/agents` for agent classes, `/tools` for tools.
+      - Optional: `/main.py` to run the agent.
