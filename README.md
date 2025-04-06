@@ -23,9 +23,19 @@ A powerful multi-agent AI framework built on the OpenAI Agents SDK for comprehen
 
 ## Usage
 
-### Running the Multi-Agent System
+### Interactive CLI
 
-Fetch, analyze, fact-check, and identify trends in news articles:
+The easiest way to use AgentToast is through the interactive CLI:
+
+```bash
+python cli.py
+```
+
+This will guide you through selecting news categories, agent modes, and various configuration options with a user-friendly interface.
+
+### Running with Command Line Arguments
+
+Alternatively, you can run the multi-agent system with command line arguments:
 
 ```bash
 python run_agent.py --agent coordinator --category technology --count 3 --model gpt-4
@@ -88,6 +98,7 @@ python run_agent.py --agent coordinator --category politics --save-markdown --sa
 
 ## Features
 
+- **Interactive CLI**: User-friendly command line interface for easy configuration
 - **Multi-Agent Architecture**: Specialized agents work together for comprehensive news analysis:
   - **NewsAgent**: Fetches and processes articles from various sources
   - **AnalystAgent**: Provides deeper insights and analysis of the news
@@ -108,21 +119,29 @@ python run_agent.py --agent coordinator --category politics --save-markdown --sa
 
 ## Project Structure
 
-- `src/agents/`: Contains agent implementations
-  - `base_agent.py`: Base agent class with tracing and common functionality
-  - `example_agent.py`: News agent implementation
-  - `writer_agent.py`: Writer agent for concise summaries
-  - `analyst_agent.py`: Analysis agent for deeper insights
-  - `fact_checker_agent.py`: Fact checking agent for verification
-  - `trend_agent.py`: Trend detection agent for patterns
-  - `coordinator_agent.py`: Multi-agent coordinator
-  - `planner_agent.py`: Planning agent for workflow orchestration
-- `src/tools/`: Contains tool implementations
-  - `news_tool.py`: Tool for fetching news from NewsAPI
-- `src/utils/`: Utility functions and helpers
-  - `tts.py`: Text-to-speech utilities for audio generation
-- `run_agent.py`: Main entry point for running agents
+- `src/`: Core source code
+  - `agents/`: Contains agent implementations
+    - `base_agent.py`: Base agent class with tracing and common functionality
+    - `example_agent.py`: News agent implementation
+    - `writer_agent.py`: Writer agent for concise summaries
+    - `analyst_agent.py`: Analysis agent for deeper insights
+    - `fact_checker_agent.py`: Fact checking agent for verification
+    - `trend_agent.py`: Trend detection agent for patterns
+    - `coordinator_agent.py`: Multi-agent coordinator
+    - `planner_agent.py`: Planning agent for workflow orchestration
+  - `tools/`: Contains tool implementations
+    - `news_tool.py`: Tool for fetching news from NewsAPI
+    - `sentiment_tool.py`: Tool for sentiment analysis of news content
+  - `utils/`: Utility functions and helpers
+    - `tts.py`: Text-to-speech utilities for audio generation
+    - `tracing.py`: Utilities for tracing agent execution
+  - `config.py`: Configuration settings for the application
+  - `main.py`: Main entry point for the application
+- `run_agent.py`: Command-line entry point for running agents
+- `cli.py`: Interactive CLI interface for easy configuration
 - `output/`: Directory where output files are saved
+- `tests/`: Unit tests for the application
+- `requirements.txt`: Dependencies for the project
 
 ## Development
 
@@ -145,9 +164,17 @@ The system uses a team of specialized agents coordinated by a central coordinato
 3. **WriterAgent**: Creates a concise summary for audio output that accurately reflects the news content
 4. **CoordinatorAgent**: Orchestrates the workflow and consolidates results
 
-### Key Improvements
+### Testing
 
-- **Enhanced Audio Summaries**: Audio summaries now accurately reflect the actual content of the news articles
+The project includes a unit test suite in the `tests/` directory. To run the tests:
+
+```bash
+pytest
+```
+
+### Key Features
+
+- **Enhanced Audio Summaries**: Audio summaries accurately reflect the actual content of the news articles
 - **Context-Aware Writer**: The WriterAgent uses additional context from analysis and fact-checking to create more informative summaries
 - **Parallel Processing**: Analysis, fact-checking, and trend detection run simultaneously for efficiency
 - **Flexible Output Options**: Generate everything from brief audio summaries to comprehensive written reports
