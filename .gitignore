@@ -30,6 +30,7 @@ yarn-error.log*
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 
@@ -77,6 +78,7 @@ htmlcov/
 # IDE files
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 
