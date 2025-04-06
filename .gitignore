@@ -97,5 +97,9 @@ build/
 Thumbs.db
 
 # Output files that are dynamic
-output/*
-!output/.gitkeep 
+# output/*
+# !output/.gitkeep 
+.cursor/rules.yaml
+.github/FUNDING.yml
+AgentToast-BlogPost.md
+.gitignore
