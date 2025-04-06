@@ -325,6 +325,17 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
         Returns:
             A structured NewsSummary object
         """
+        # Handle None output
+        if output is None:
+            self.logger.error("Received None output from agent")
+            return NewsSummary(
+                category="general",
+                article_count=0,
+                articles=[],
+                summary="Error: No output received from agent",
+                markdown=""
+            )
+            
         try:
             # Try to parse the output as JSON
             data = json.loads(output)
@@ -360,49 +371,46 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
             # If the output is not valid JSON, attempt to extract info from text
             self.logger.warning("Failed to parse agent output as JSON")
             
-            # Simple attempt to extract article info using pattern matching
+            # Better article extraction using pattern matching
             articles = []
             category = "general"
             summary = output
             
             # Try to find article titles and urls in the text
             import re
-            title_pattern = r"\*\*Title:\*\*\s*(.*?)(?:\n|$)|\*\*\[(.*?)\]\("
-            desc_pattern = r"\*\*Description:\*\*\s*(.*?)(?:\n|$)"
-            source_pattern = r"\*\*Source:\*\*\s*(.*?)(?:\n|$)"
-            url_pattern = r"\[Read more\]\((.*?)\)|\*\*\[[^\]]+\]\((.*?)\)"
-            published_pattern = r"\*\*Published [Aa]t:\*\*\s*(.*?)(?:\n|$)"
             
-            # Try to extract the category
-            category_match = re.search(r"NEWS SUMMARY:\s*(.*?)(?:\n|$)", output, re.IGNORECASE)
+            # Extract the category from the header
+            category_match = re.search(r"#\s+(.*?)\s+News|Top Headlines in\s+(.*?)\s", output, re.IGNORECASE)
             if category_match:
-                category = category_match.group(1).lower()
+                category = (category_match.group(1) or category_match.group(2) or "").lower().strip()
+                if category == "top":
+                    category = "top-headlines"
             
-            # Find titles and create article objects
-            title_matches = list(re.finditer(title_pattern, output))
-            url_matches = list(re.finditer(url_pattern, output))
+            # New article extraction pattern that matches numbered articles
+            # This pattern matches: "## [Number]. [Article Title](URL)" format
+            numbered_article_pattern = r"##\s+\d+\.\s+\[(.*?)\]\((.*?)\)"
+            article_matches = list(re.finditer(numbered_article_pattern, output))
             
-            for i, title_match in enumerate(title_matches):
-                # Get the title from either group 1 or group 2 (depending on which pattern matched)
-                title = title_match.group(1) if title_match.group(1) else title_match.group(2)
-                title = title.strip() if title else "No title"
+            for i, match in enumerate(article_matches):
+                title = match.group(1).strip()
+                url = match.group(2).strip()
                 
-                # Find corresponding description, source, and URL
-                match_pos = title_match.end()
-                desc_match = re.search(desc_pattern, output[match_pos:])
-                source_match = re.search(source_pattern, output[match_pos:])
-                published_match = re.search(published_pattern, output[match_pos:])
+                # Get the text block between this article and the next one (or end of text)
+                start_pos = match.end()
+                end_pos = len(output)
+                if i + 1 < len(article_matches):
+                    end_pos = article_matches[i + 1].start()
                 
-                # Get URL either from the pattern or try to match with url_matches
-                url = ""
-                if i < len(url_matches):
-                    url_match = url_matches[i]
-                    url = url_match.group(1) if url_match.group(1) else url_match.group(2)
-                    url = url.strip() if url else ""
+                block_text = output[start_pos:end_pos]
                 
-                description = desc_match.group(1).strip() if desc_match else "No description"
+                # Extract metadata using specific patterns
+                source_match = re.search(r"\*\*Source:\*\*\s*(.*?)(?:\n|$)", block_text)
+                published_match = re.search(r"\*\*Published At:\*\*\s*(.*?)(?:\n|$)", block_text)
+                desc_match = re.search(r"- (.*?)(?:\n\n|$)", block_text)
+                
                 source = source_match.group(1).strip() if source_match else "Unknown source"
                 published_at = published_match.group(1).strip() if published_match else ""
+                description = desc_match.group(1).strip() if desc_match else "No description"
                 
                 article = NewsArticle(
                     title=title,
@@ -413,10 +421,156 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
                 )
                 articles.append(article)
             
+            # If no articles found with the numbered pattern, try alternative patterns
+            if not articles:
+                # Try the pattern with article headers
+                article_pattern = r"##\s+Article\s+\d+:\s+\[(.*?)\]\((.*?)\)|##\s+\[(.*?)\]"
+                article_blocks = re.split(article_pattern, output)[1:]  # Split by article headers
+                
+                # Process blocks in chunks of 3 (title, url, remaining text)
+                for i in range(0, len(article_blocks), 3):
+                    if i+2 >= len(article_blocks):
+                        break
+                        
+                    title = article_blocks[i] if article_blocks[i] else "No title"
+                    url = article_blocks[i+1] if article_blocks[i+1] else ""
+                    block_text = article_blocks[i+2] if article_blocks[i+2] else ""
+                    
+                    # Skip if any required field is None
+                    if None in (title, url, block_text):
+                        continue
+                        
+                    title = title.strip()
+                    url = url.strip()
+                    
+                    # Extract the description, source, and published date
+                    desc_match = re.search(r"\*\*Description:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE | re.DOTALL)
+                    source_match = re.search(r"\*\*Source:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE)
+                    published_match = re.search(r"\*\*Published(?:\s+At)?:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE)
+                    
+                    description = desc_match.group(1).strip() if desc_match else "No description"
+                    source = source_match.group(1).strip() if source_match else "Unknown source"
+                    published_at = published_match.group(1).strip() if published_match else ""
+                    
+                    article = NewsArticle(
+                        title=title,
+                        description=description,
+                        url=url,
+                        source=source,
+                        published_at=published_at
+                    )
+                    articles.append(article)
+                    
+                # If the article_pattern didn't work, try an alternative pattern for markdown lists
+                if not articles:
+                    # This pattern works with: "- **Title:** [Article Title](URL)"
+                    alt_title_pattern = r"\*\*Title:\*\*\s*\[(.*?)\]\((.*?)\)|\*\*\[(.*?)\]\((.*?)\)"
+                    alt_matches = list(re.finditer(alt_title_pattern, output))
+                    
+                    for match in alt_matches:
+                        # Handle potential None values from regex group matches
+                        groups = match.groups()
+                        title = next((g for g in groups[:2] if g is not None), "No title")
+                        url = next((g for g in groups[2:] if g is not None), "")
+                        
+                        match_pos = match.end()
+                        
+                        # Find description, source, and published date after this title
+                        desc_match = re.search(r"\*\*Description:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE | re.DOTALL)
+                        source_match = re.search(r"\*\*Source:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE)
+                        published_match = re.search(r"\*\*Published(?:\s+At)?:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE)
+                        
+                        description = desc_match.group(1).strip() if desc_match else "No description"
+                        source = source_match.group(1).strip() if source_match else "Unknown source"
+                        published_at = published_match.group(1).strip() if published_match else ""
+                        
+                        article = NewsArticle(
+                            title=title,
+                            description=description,
+                            url=url,
+                            source=source,
+                            published_at=published_at
+                        )
+                        articles.append(article)
+            
             # Try to extract the summary section
-            summary_match = re.search(r"(?:### Summary:?|### Summary of .+?:)(.*?)(?:-{5,}|$)", output, re.DOTALL | re.IGNORECASE)
+            summary_match = re.search(r"(?:##\s+Summary|\n+##\s+Summary|\n+###\s+Summary|\n+###\s+Key Points):?(.*?)(?:\n+##|\Z)", output, re.DOTALL | re.IGNORECASE)
             if summary_match:
                 summary = summary_match.group(1).strip()
+            
+            # Add manual article extraction based on the output format we're seeing
+            if not articles:
+                self.logger.warning("Trying manual article extraction pattern")
+                # Extract articles from the observed format
+                lines = output.strip().split('\n')
+                article_start_indices = []
+                
+                # Find all article starting lines
+                for i, line in enumerate(lines):
+                    if re.match(r'^##\s+\d+\.\s+\[.*\]\(.*\)', line):
+                        article_start_indices.append(i)
+                
+                # Process each article
+                for i, start_idx in enumerate(article_start_indices):
+                    # Get the article block
+                    end_idx = article_start_indices[i+1] if i+1 < len(article_start_indices) else len(lines)
+                    article_lines = lines[start_idx:end_idx]
+                    
+                    # Extract title and URL
+                    title_line = article_lines[0]
+                    title_match = re.search(r'\[(.*?)\]\((.*?)\)', title_line)
+                    
+                    if title_match:
+                        title = title_match.group(1)
+                        url = title_match.group(2)
+                        
+                        # Look for source and published date
+                        source = "Unknown source"
+                        published_at = ""
+                        description = ""
+                        
+                        for line in article_lines[1:]:
+                            if "**Source:**" in line:
+                                source = line.split("**Source:**")[-1].strip()
+                            elif "**Published At:**" in line:
+                                published_at = line.split("**Published At:**")[-1].strip()
+                            elif line.startswith('- '):
+                                description = line[2:].strip()
+                        
+                        article = NewsArticle(
+                            title=title,
+                            description=description,
+                            url=url,
+                            source=source,
+                            published_at=published_at
+                        )
+                        articles.append(article)
+            
+            # Log the results
+            self.logger.info(f"Extracted {len(articles)} articles from markdown format")
+            if articles:
+                for i, article in enumerate(articles):
+                    self.logger.info(f"Article {i+1}: {article.title[:50]}... (source: {article.source})")
+            else:
+                self.logger.warning("No articles could be extracted from the markdown output")
+                
+                # Extract headlines directly from raw markdown as a last resort
+                headline_matches = re.finditer(r'(?:##|###)\s+\d+\.\s+\[(.*?)\]\((.*?)\)', output)
+                for match in headline_matches:
+                    title = match.group(1)
+                    url = match.group(2)
+                    self.logger.info(f"Found headline: {title}")
+                    
+                    article = NewsArticle(
+                        title=title,
+                        description="Extracted from headline",
+                        url=url,
+                        source="Unknown source",
+                        published_at=""
+                    )
+                    articles.append(article)
+                
+                self.logger.info(f"Extracted {len(articles)} articles from headlines as fallback")
             
             return NewsSummary(
                 category=category,
@@ -433,5 +587,5 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
                 article_count=0,
                 articles=[],
                 summary=f"Error processing output: {str(e)}",
-                markdown=output
+                markdown=output if output is not None else ""
             ) 

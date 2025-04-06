@@ -12,7 +12,7 @@ class FetchNewsInput(BaseModel):
     """Input schema for fetching news articles."""
     
     category: str = Field(
-        description="News category (business, entertainment, health, science, sports, technology, general)"
+        description="News category (top-headlines, business, entertainment, health, science, sports, technology, general)"
     )
     count: int = Field(default=5, description="Number of articles to fetch (1-10)")
     country: Optional[str] = Field(
@@ -69,26 +69,48 @@ class FetchNewsTool:
                 "language": "en"
             }
             
-            # Add optional parameters if provided
-            if input_data.category and input_data.category != "all":
+            # Handle category - top-headlines is an endpoint, not a category
+            is_top_headlines = input_data.category.lower() == "top-headlines"
+            
+            # Add category parameter if it's a valid category (not top-headlines or all)
+            if input_data.category and input_data.category.lower() not in ["all", "top-headlines"]:
                 params["category"] = input_data.category
-                
+                logger.info(f"Using category parameter: {input_data.category}")
+            
+            # Handle country parameter
             if input_data.country:
                 params["country"] = input_data.country
-                
+                logger.info(f"Using country: {input_data.country}")
+            elif is_top_headlines and not input_data.sources:
+                # Default to US for top headlines if no country specified and no sources
+                params["country"] = "us"
+                logger.info("No country specified for top-headlines, defaulting to 'us'")
+            
+            # Handle sources parameter (cannot be used with country or category)
             if input_data.sources:
                 params["sources"] = input_data.sources
-                # Note: sources cannot be mixed with country or category
+                logger.info(f"Using sources: {input_data.sources}")
+                
+                # NewsAPI doesn't allow sources to be used with country or category
                 if "country" in params:
+                    logger.warning("Removing 'country' parameter - cannot be used with 'sources'")
                     del params["country"]
                 if "category" in params:
+                    logger.warning("Removing 'category' parameter - cannot be used with 'sources'")
                     del params["category"]
-                
+            
+            # Handle query parameter
             if input_data.query:
                 params["q"] = input_data.query
-                
+                logger.info(f"Using search query: {input_data.query}")
+            
+            # Handle pagination
             if input_data.page and input_data.page > 0:
                 params["page"] = input_data.page
+                logger.info(f"Using page: {input_data.page}")
+            
+            # Log the final request parameters
+            logger.info(f"API Request: {url} with params: {params}")
             
             # Make the API request
             response = requests.get(url, params=params)
@@ -97,7 +119,8 @@ class FetchNewsTool:
             
             # Process and return the articles
             articles = data.get("articles", [])
-            logger.info(f"Successfully fetched {len(articles)} articles")
+            total_results = data.get("totalResults", 0)
+            logger.info(f"Successfully fetched {len(articles)} articles (total available: {total_results})")
             
             # Format articles for agent consumption
             processed_articles = []

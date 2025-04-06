@@ -27,6 +27,7 @@ import run_agent
 
 # Define constants
 NEWS_CATEGORIES = [
+    "top-headlines",
     "general", 
     "business", 
     "technology", 
@@ -42,28 +43,44 @@ VOICE_OPTIONS = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 AGENT_MODES = ["coordinator", "news", "planner", "all"]
 MODEL_OPTIONS = ["gpt-3.5-turbo", "gpt-4-turbo-preview"]
 
-def validate_count(value: str) -> bool:
+def validate_count(value, answers=None) -> bool:
     """Validate the article count is between 1 and 10."""
     try:
+        # Handle case where value might be a dict or another object
+        if isinstance(value, dict) and answers is not None:
+            return True  # Skip validation in this case
+        
         count = int(value)
         return 1 <= count <= 10
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
-def validate_float(value: str) -> bool:
+def validate_float(value, answers=None) -> bool:
     """Validate input is a float between 0 and 1."""
     try:
+        # Empty values are allowed
+        if not value:
+            return True
+        
+        # Handle case where value might be a dict or another object
+        if isinstance(value, dict) and answers is not None:
+            return True
+            
         val = float(value)
         return 0 <= val <= 1
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
-def validate_max_facts(value: str) -> bool:
+def validate_max_facts(value, answers=None) -> bool:
     """Validate max facts is a positive integer."""
     try:
+        # Handle case where value might be a dict or another object
+        if isinstance(value, dict) and answers is not None:
+            return True
+            
         count = int(value)
         return count > 0
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 def get_cli_args() -> Dict[str, Any]:
@@ -112,7 +129,7 @@ def get_cli_args() -> Dict[str, Any]:
             "temperature",
             message="Model temperature (0.0-1.0, leave empty for default)",
             default="",
-            validate=lambda x: not x or validate_float(x)
+            validate=lambda x, answers=None: not x or validate_float(x, answers)
         )
     ]
     

@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 import logging
 import asyncio
+import re
 
 from agents import function_tool
 from src.agents.base_agent import BaseAgent
@@ -132,16 +133,6 @@ class CoordinatorAgent:
             
             news_result = await news_agent.run(news_input)
             
-            agent_results.append(AgentResult(
-                agent_name="NewsAgent",
-                success=True,
-                data={
-                    "category": news_result.category,
-                    "article_count": news_result.article_count,
-                    "summary": news_result.summary
-                }
-            ))
-            
             # Prepare data for other agents
             articles_data = [
                 {
@@ -153,6 +144,105 @@ class CoordinatorAgent:
                 }
                 for article in news_result.articles
             ]
+            
+            # Log the article data to help with debugging
+            logger.info(f"NewsAgent returned {len(news_result.articles)} articles for category: {news_result.category}")
+            
+            # Verify we have article data - if not, try to extract from markdown
+            if not articles_data and news_result.markdown:
+                logger.warning("No structured article data found, attempting to extract from markdown")
+                
+                # Try to match against the numbered article pattern first
+                numbered_article_pattern = r"##\s+\d+\.\s+\[(.*?)\]\((.*?)\)"
+                article_matches = list(re.finditer(numbered_article_pattern, news_result.markdown))
+                
+                if article_matches:
+                    for i, match in enumerate(article_matches):
+                        title = match.group(1).strip()
+                        url = match.group(2).strip()
+                        
+                        # Get the text block between this article and the next one (or end of text)
+                        start_pos = match.end()
+                        end_pos = len(news_result.markdown)
+                        if i + 1 < len(article_matches):
+                            end_pos = article_matches[i + 1].start()
+                        
+                        block_text = news_result.markdown[start_pos:end_pos]
+                        
+                        # Extract metadata using specific patterns
+                        source_match = re.search(r"\*\*Source:\*\*\s*(.*?)(?:\n|$)", block_text)
+                        published_match = re.search(r"\*\*Published At:\*\*\s*(.*?)(?:\n|$)", block_text)
+                        desc_match = re.search(r"- (.*?)(?:\n\n|$)", block_text)
+                        
+                        source = source_match.group(1).strip() if source_match else "Unknown source"
+                        published_at = published_match.group(1).strip() if published_match else ""
+                        description = desc_match.group(1).strip() if desc_match else "No description"
+                        
+                        articles_data.append({
+                            "title": title,
+                            "description": description,
+                            "source": source,
+                            "url": url,
+                            "published_at": published_at
+                        })
+                else:
+                    # If numbered pattern didn't work, try the "Article X" pattern
+                    article_pattern = r"##\s+Article\s+\d+:\s+\[(.*?)\]\((.*?)\)"
+                    article_matches = re.finditer(article_pattern, news_result.markdown)
+                    
+                    for match in article_matches:
+                        title = match.group(1).strip()
+                        url = match.group(2).strip()
+                        # Extract description and source
+                        block_start = match.end()
+                        block_end = news_result.markdown.find("##", block_start)
+                        if block_end == -1:
+                            block_end = len(news_result.markdown)
+                        block = news_result.markdown[block_start:block_end]
+                        
+                        desc_match = re.search(r"\*\*Description:?\*\*\s*(.*?)(?:\n|$)", block)
+                        source_match = re.search(r"\*\*Source:?\*\*\s*(.*?)(?:\n|$)", block)
+                        published_match = re.search(r"\*\*Published(?:\s+At)?:?\*\*\s*(.*?)(?:\n|$)", block)
+                        
+                        description = desc_match.group(1).strip() if desc_match else "No description"
+                        source = source_match.group(1).strip() if source_match else "Unknown source"
+                        published_at = published_match.group(1).strip() if published_match else ""
+                        
+                        articles_data.append({
+                            "title": title,
+                            "description": description,
+                            "source": source,
+                            "url": url,
+                            "published_at": published_at
+                        })
+                    
+                    # If still no articles, try parsing the entire markdown as a last resort
+                    if not articles_data:
+                        # Extract any lines that look like headlines with links
+                        headline_matches = re.finditer(r'(?:##|###)\s+\d+\.\s+\[(.*?)\]\((.*?)\)', news_result.markdown)
+                        for match in headline_matches:
+                            title = match.group(1)
+                            url = match.group(2)
+                            
+                            articles_data.append({
+                                "title": title,
+                                "description": "Extracted from headline",
+                                "source": "Unknown source",
+                                "url": url,
+                                "published_at": ""
+                            })
+                
+                logger.info(f"Extracted {len(articles_data)} articles from markdown content")
+            
+            agent_results.append(AgentResult(
+                agent_name="NewsAgent",
+                success=True,
+                data={
+                    "category": news_result.category,
+                    "article_count": len(articles_data),  # Use actual count
+                    "summary": news_result.summary
+                }
+            ))
             
         except Exception as e:
             logger.error(f"Error in NewsAgent: {str(e)}")
@@ -370,6 +460,16 @@ class CoordinatorAgent:
         """Run the trend agent and return its result."""
         try:
             logger.info(f"Starting TrendAgent for category: {category}")
+            
+            # Check if articles list is empty or None
+            if not articles:
+                logger.warning("No articles provided to TrendAgent. Skipping trend analysis.")
+                return AgentResult(
+                    agent_name="TrendAgent",
+                    success=False,
+                    error="No articles provided for trend analysis"
+                )
+                
             trend_agent = TrendAgent(
                 verbose=self.verbose,
                 model=self.model,

@@ -85,6 +85,10 @@ class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
             
             Your output should be well-organized and provide genuine insights beyond what's immediately obvious.
             Focus on quality over quantity - identify the most significant trends rather than listing everything.
+            
+            If there are fewer than 3 articles provided, note this limitation in your analysis.
+            If there are no articles provided, respond with a clear message indicating no articles are available
+            for trend analysis, and suggest what types of articles would be helpful to analyze in the future.
             """,
             tools=[],  # No tools needed for this agent
             verbose=verbose,
@@ -177,4 +181,38 @@ class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
                 trends=trends,
                 meta_trends=meta_trends,
                 summary=summary
-            ) 
+            )
+
+    async def run(self, input_data: TrendInput) -> TrendOutput:
+        """
+        Run the trend agent to identify patterns and trends.
+        
+        Args:
+            input_data: The input parameters
+            
+        Returns:
+            Identified trends and analysis
+        """
+        # Log input data details
+        logger.info(f"Running TrendAgent for category: {input_data.category}")
+        logger.info(f"Received {len(input_data.articles)} articles for trend analysis")
+        
+        if len(input_data.articles) == 0:
+            logger.warning("No articles provided for trend analysis")
+            return TrendOutput(
+                trends=[],
+                meta_trends=[],
+                summary="It seems there are no news articles provided at the moment. To perform trend analysis, I would need a collection of news articles related to similar topics or themes. With proper data, I could identify emerging patterns, assess their strength, and provide insights on how these trends might evolve over time."
+            )
+        
+        if len(input_data.articles) < 3:
+            logger.warning(f"Received only {len(input_data.articles)} articles - limited trend analysis possible")
+        
+        # Log article titles to help with debugging
+        for i, article in enumerate(input_data.articles):
+            title = article.get("title", "No title")
+            source = article.get("source", "Unknown")
+            logger.info(f"Article {i+1}: {title[:50]}... (source: {source})")
+        
+        # Continue with regular processing
+        return await super().run(input_data) 

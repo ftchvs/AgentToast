@@ -43,7 +43,7 @@ python run_agent.py --agent coordinator --category technology --count 3 --model 
 
 #### Basic Options
 - `--agent`: The agent to run (`news`, `planner`, `coordinator`, or `all`)
-- `--category`: News category (general, business, technology, sports, etc.)
+- `--category`: News category (top-headlines, general, business, technology, sports, etc.)
 - `--count`: Number of articles to fetch (1-10)
 - `--model`: Model to use (gpt-3.5-turbo, gpt-4, etc.)
 - `--temperature`: Model temperature (0.0-1.0)
@@ -81,6 +81,11 @@ Run a full multi-agent analysis on technology news:
 python run_agent.py --agent coordinator --category technology --count 3 --analysis-depth deep --full-report
 ```
 
+Get top headlines with fact checking and trend analysis:
+```bash
+python run_agent.py --agent coordinator --category top-headlines --count 5
+```
+
 Get business news with fact checking but without trend analysis:
 ```bash
 python run_agent.py --agent coordinator --category business --no-trend-analysis
@@ -106,6 +111,7 @@ python run_agent.py --agent coordinator --category politics --save-markdown --sa
   - **TrendAgent**: Identifies patterns and trends across articles
   - **WriterAgent**: Creates concise, engaging summaries for audio
   - **CoordinatorAgent**: Orchestrates the entire workflow
+  - **PlannerAgent**: Plans the overall workflow strategy
 - **Parallel Processing**: Agents run concurrently for efficient analysis
 - **Intelligent Audio Summaries**: Generates accurate audio summaries that reflect the actual content of news articles
 - **Customizable Analysis**: Control analysis depth and focus areas
@@ -116,6 +122,100 @@ python run_agent.py --agent coordinator --category politics --save-markdown --sa
 - **Text-to-Speech**: Converts summaries to audio using OpenAI's TTS API
 - **Multiple Voice Options**: Choose from different voices for audio output
 - **Comprehensive Reports**: Generate detailed reports combining all agent outputs
+- **Top Headlines Category**: Get the most important news across all categories
+
+## News Categories
+
+AgentToast supports the following news categories:
+- **top-headlines**: The most important news across all categories
+- **general**: General news from various sources
+- **business**: Business and financial news
+- **technology**: Technology and innovation news
+- **sports**: Sports news and updates
+- **entertainment**: Entertainment industry news
+- **health**: Health and medical news
+- **science**: Science news and discoveries
+
+## Agent Modes
+
+- **news**: Run only the NewsAgent to fetch and summarize articles
+- **planner**: Run the PlannerAgent to create a processing plan
+- **coordinator**: Run the CoordinatorAgent to orchestrate multiple agents
+- **all**: Run both the PlannerAgent and CoordinatorAgent in sequence
+
+## Trend Analysis
+
+The TrendAgent identifies patterns and connections across articles, providing insights into:
+
+- Emerging, growing, or established trends
+- Short, medium, and long-term timeframes
+- Meta-trends that connect multiple individual trends
+- Supporting evidence from the articles
+- Implications for readers and stakeholders
+
+## Fact Checking
+
+The FactCheckerAgent verifies key claims in articles:
+
+- Identifies factual statements from articles
+- Assesses each claim as Verified, Needs Context, or Unverified
+- Provides explanations for each assessment
+- Rates confidence level for each verification
+- Summarizes overall findings
+
+## Monitoring Agent Interactions
+
+The AgentToast system is built on a multi-agent architecture where several specialized agents work together. To monitor how agents are interacting with each other:
+
+1. **View the coordinator agent's output:** 
+   - Run `python run_agent.py --agent coordinator --verbose --trace` to enable verbose output and tracing
+   - The coordinator will show each agent's execution and how their outputs are passed to other agents
+   - Look for the "Agent Team Performance" section to see which agents ran successfully
+
+2. **Check agent results in the full report:**
+   - Add `--full-report` flag when running the system 
+   - The generated report shows results from each agent and how they build on each other
+
+3. **Examine generated trace logs:**
+   - Enable tracing with `--trace` flag
+   - Trace IDs are displayed at the end of each agent run
+   - These traces show complete execution flow including inter-agent communication
+
+4. **Review code flow:**
+   - The `CoordinatorAgent.run()` method shows the multi-agent workflow
+   - Agent results are collected in the `agent_results` list
+   - Outputs from NewsAgent become inputs for AnalystAgent, FactCheckerAgent, and TrendAgent
+   - WriterAgent uses outputs from all previous agents to create the final summary
+
+5. **Observe context sharing:**
+   - The system compiles outputs from multiple agents into a context for the WriterAgent
+   - This demonstrates how information flows between agents
+
+The system primarily uses orchestrated sequencing where the coordinator passes data between specialized agents rather than direct agent-to-agent communication.
+
+## Recent Improvements
+
+Recent updates to AgentToast have enhanced its functionality and reliability:
+
+1. **Robust Article Extraction**: 
+   - Improved parsing of different markdown formats
+   - Multiple extraction strategies for different output styles
+   - Fallback mechanisms to ensure articles are always extracted
+
+2. **Enhanced Trend Analysis**:
+   - Better identification of patterns across articles
+   - Meta-trend detection for connecting multiple trends
+   - Support for multiple timeframes and trend strengths
+
+3. **Planner Agent Optimizations**:
+   - More reliable output parsing
+   - Structured plan generation
+   - Better handling of complex workflows
+
+4. **Improved Data Flow**:
+   - More reliable data passage between agents
+   - Better handling of edge cases
+   - Enhanced error recovery and graceful degradation
 
 ## Project Structure
 
@@ -178,4 +278,5 @@ pytest
 - **Context-Aware Writer**: The WriterAgent uses additional context from analysis and fact-checking to create more informative summaries
 - **Parallel Processing**: Analysis, fact-checking, and trend detection run simultaneously for efficiency
 - **Flexible Output Options**: Generate everything from brief audio summaries to comprehensive written reports
-- **Custom Summary Styles**: Choose between formal, conversational, or brief summary styles to match your preference 
+- **Custom Summary Styles**: Choose between formal, conversational, or brief summary styles to match your preference
+- **Robust Error Handling**: Graceful handling of API errors, parsing issues, and edge cases 

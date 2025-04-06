@@ -62,7 +62,25 @@ class PlannerAgent(BaseAgent[PlannerInput, PlannerOutput]):
             2. Determining the optimal parameters for each processing step
             3. Adapting the plan based on article count and categories
             
-            I return a structured processing plan with well-defined steps.
+            I return a structured processing plan with well-defined steps in JSON format like:
+            
+            {
+                "steps": [
+                    {
+                        "step": 1,
+                        "action": "fetch_news",
+                        "params": {"category": "top-headlines", "count": 5}
+                    },
+                    {
+                        "step": 2,
+                        "action": "analyze",
+                        "params": {"depth": "moderate"}
+                    }
+                ],
+                "estimated_time": 60
+            }
+            
+            The steps array must contain step, action, and params fields. Ensure all output is valid JSON.
             """,
             tools=[],  # No specific tools needed for planning
             verbose=verbose,
@@ -105,9 +123,62 @@ class PlannerAgent(BaseAgent[PlannerInput, PlannerOutput]):
         Returns:
             A structured planning result
         """
+        # Check for empty or whitespace-only output
+        if not output or output.strip() == "":
+            logger.error("Empty output received from agent")
+            return PlannerOutput(
+                success=False,
+                error="Empty output received from agent",
+                trace_id=None
+            )
+        
+        # Try to extract JSON if output contains JSON within other text
+        import json
+        import re
+        
+        # Look for JSON-like patterns
+        json_pattern = r'({[\s\S]*})'
+        json_match = re.search(json_pattern, output)
+        
+        if json_match:
+            try:
+                # Try to parse the extracted JSON
+                potential_json = json_match.group(1)
+                data = json.loads(potential_json)
+                
+                # Extract the steps
+                steps_data = data.get("steps", [])
+                steps = []
+                
+                for step_data in steps_data:
+                    step = PlanStep(
+                        step=step_data.get("step", 0),
+                        action=step_data.get("action", ""),
+                        params=step_data.get("params", {})
+                    )
+                    steps.append(step)
+                
+                # Create the plan
+                plan = ProcessingPlan(
+                    steps=steps,
+                    estimated_time=data.get("estimated_time", 60)
+                )
+                
+                # Get the trace ID from the tracing manager
+                traces = tracing.get_traces()
+                trace_id = traces[0].get("trace_id") if traces else None
+                
+                # Return the result
+                return PlannerOutput(
+                    success=True,
+                    plan=plan,
+                    trace_id=trace_id
+                )
+            except json.JSONDecodeError:
+                pass  # Continue to next method if JSON extraction fails
+        
         try:
-            # Try to parse the output as JSON
-            import json
+            # Try to parse the whole output as JSON
             data = json.loads(output)
             
             # Extract the steps
@@ -144,8 +215,6 @@ class PlannerAgent(BaseAgent[PlannerInput, PlannerOutput]):
             logger.error(f"Error processing agent output: {str(e)}")
             
             # Try to extract basic steps using regex
-            import re
-            
             steps = []
             step_pattern = r"Step (\d+):?\s*([a-zA-Z]+)(.*?)(?=Step \d+:|$)"
             
@@ -189,6 +258,40 @@ class PlannerAgent(BaseAgent[PlannerInput, PlannerOutput]):
                 plan = ProcessingPlan(
                     steps=steps,
                     estimated_time=60  # Default value
+                )
+                
+                return PlannerOutput(
+                    success=True,
+                    plan=plan,
+                    trace_id=None
+                )
+            
+            # If no steps could be parsed, create a basic default plan
+            if not steps:
+                logger.warning("Generating default plan as fallback")
+                
+                # Create a minimal default plan based on input context
+                default_steps = [
+                    PlanStep(
+                        step=1,
+                        action="fetch_news",
+                        params={"category": "top-headlines", "count": 5}
+                    ),
+                    PlanStep(
+                        step=2,
+                        action="analyze",
+                        params={"depth": "moderate"}
+                    ),
+                    PlanStep(
+                        step=3,
+                        action="summarize",
+                        params={"format": "audio", "voice": "alloy"}
+                    )
+                ]
+                
+                plan = ProcessingPlan(
+                    steps=default_steps,
+                    estimated_time=120
                 )
                 
                 return PlannerOutput(
