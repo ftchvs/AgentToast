@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Interaction Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .diagram {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            padding: 20px;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            margin-right: 5px;
+            background-color: #ddd;
+            border-radius: 5px 5px 0 0;
+            cursor: pointer;
+        }
+        .tab.active {
+            background-color: #fff;
+            border-bottom: 2px solid #4285f4;
+        }
+        .diagram-content {
+            display: none;
+        }
+        .diagram-content.active {
+            display: block;
+        }
+        svg {
+            display: block;
+            margin: 0 auto;
+        }
+        .node {
+            cursor: pointer;
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+            stroke-width: 1.5px;
+        }
+        .node text {
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            z-index: 1000;
+            font-size: 12px;
+            max-width: 300px;
+        }
+        .controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Agent Interaction Visualization</h1>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="network">Agent Network</div>
+            <div class="tab" data-tab="hierarchy">Agent Hierarchy</div>
+            <div class="tab" data-tab="sequence">Sequence Flow</div>
+        </div>
+        
+        <div class="diagram">
+            <div class="controls">
+                <button id="zoomIn">Zoom In</button>
+                <button id="zoomOut">Zoom Out</button>
+                <button id="reset">Reset</button>
+            </div>
+            
+            <div class="diagram-content active" id="network">
+                <svg width="1100" height="600"></svg>
+            </div>
+            
+            <div class="diagram-content" id="hierarchy">
+                <svg width="1100" height="600"></svg>
+            </div>
+            
+            <div class="diagram-content" id="sequence">
+                <svg width="1100" height="600"></svg>
+            </div>
+        </div>
+        
+        <div class="details">
+            <h2>Details</h2>
+            <p id="details-content">Click on an agent in the diagram to see details.</p>
+        </div>
+    </div>
+
+    <script>
+        // Agent data
+        const agentData = {
+            nodes: [
+                { id: "User", type: "user", description: "End user who initiates tasks" },
+                { id: "CoordinatorAgent", type: "agent", description: "Coordinates the multi-agent news workflow", input: "CoordinatorInput", output: "CoordinatorOutput" },
+                { id: "NewsAgent", type: "agent", description: "Fetches and summarizes news articles", input: "NewsRequest", output: "NewsSummary" },
+                { id: "WriterAgent", type: "agent", description: "Generates content and summaries", input: "WriterInput", output: "WriterOutput" },
+                { id: "AnalystAgent", type: "agent", description: "Analyzes content for insights", input: "AnalystInput", output: "AnalystOutput" },
+                { id: "FactCheckerAgent", type: "agent", description: "Verifies factual claims in content", input: "FactCheckerInput", output: "FactCheckerOutput" },
+                { id: "TrendAgent", type: "agent", description: "Identifies trends in data", input: "TrendInput", output: "TrendOutput" },
+                { id: "PlannerAgent", type: "agent", description: "Creates task execution plans", input: "PlannerInput", output: "PlannerOutput" },
+                { id: "BaseAgent", type: "base", description: "Abstract base class for all agents" },
+                { id: "NewsTool", type: "tool", description: "Tool for fetching news articles" },
+                { id: "SentimentTool", type: "tool", description: "Tool for sentiment analysis" }
+            ],
+            links: [
+                { source: "User", target: "CoordinatorAgent", type: "interaction" },
+                { source: "CoordinatorAgent", target: "NewsAgent", type: "calls" },
+                { source: "CoordinatorAgent", target: "WriterAgent", type: "calls" },
+                { source: "CoordinatorAgent", target: "AnalystAgent", type: "calls" },
+                { source: "CoordinatorAgent", target: "FactCheckerAgent", type: "calls" },
+                { source: "CoordinatorAgent", target: "TrendAgent", type: "calls" },
+                { source: "BaseAgent", target: "NewsAgent", type: "inherits" },
+                { source: "BaseAgent", target: "WriterAgent", type: "inherits" },
+                { source: "BaseAgent", target: "AnalystAgent", type: "inherits" },
+                { source: "BaseAgent", target: "FactCheckerAgent", type: "inherits" },
+                { source: "BaseAgent", target: "TrendAgent", type: "inherits" },
+                { source: "BaseAgent", target: "PlannerAgent", type: "inherits" },
+                { source: "NewsAgent", target: "NewsTool", type: "uses" },
+                { source: "AnalystAgent", target: "SentimentTool", type: "uses" },
+                { source: "TrendAgent", target: "SentimentTool", type: "uses" }
+            ]
+        };
+
+        // Hierarchy data
+        const hierarchyData = {
+            name: "Agents",
+            children: [
+                {
+                    name: "BaseAgent",
+                    children: [
+                        { name: "NewsAgent", value: 3 },
+                        { name: "WriterAgent", value: 2 },
+                        { name: "AnalystAgent", value: 2 },
+                        { name: "FactCheckerAgent", value: 2 },
+                        { name: "TrendAgent", value: 2 },
+                        { name: "PlannerAgent", value: 2 }
+                    ]
+                },
+                {
+                    name: "Tools",
+                    children: [
+                        { name: "NewsTool", value: 2 },
+                        { name: "SentimentTool", value: 2 }
+                    ]
+                }
+            ]
+        };
+
+        // Sequence data
+        const sequenceData = [
+            { source: "User", target: "CoordinatorAgent", action: "Submit Task" },
+            { source: "CoordinatorAgent", target: "NewsAgent", action: "Fetch News" },
+            { source: "NewsAgent", target: "CoordinatorAgent", action: "Return Articles" },
+            { source: "CoordinatorAgent", target: "WriterAgent", action: "Generate Summary" },
+            { source: "WriterAgent", target: "CoordinatorAgent", action: "Return Summary" },
+            { source: "CoordinatorAgent", target: "AnalystAgent", action: "Analyze Content" },
+            { source: "AnalystAgent", target: "CoordinatorAgent", action: "Return Analysis" },
+            { source: "CoordinatorAgent", target: "FactCheckerAgent", action: "Verify Facts" },
+            { source: "FactCheckerAgent", target: "CoordinatorAgent", action: "Return Verification" },
+            { source: "CoordinatorAgent", target: "TrendAgent", action: "Identify Trends" },
+            { source: "TrendAgent", target: "CoordinatorAgent", action: "Return Trends" },
+            { source: "CoordinatorAgent", target: "User", action: "Return Final Output" }
+        ];
+
+        // Initialize tool tip
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        // Initialize Network Diagram
+        function initNetworkDiagram() {
+            const svg = d3.select("#network svg");
+            const width = +svg.attr("width");
+            const height = +svg.attr("height");
+            
+            // Clear previous content
+            svg.selectAll("*").remove();
+            
+            // Create a group for zoom behavior
+            const g = svg.append("g");
+            
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            // Create simulation
+            const simulation = d3.forceSimulation(agentData.nodes)
+                .force("link", d3.forceLink(agentData.links).id(d => d.id).distance(150))
+                .force("charge", d3.forceManyBody().strength(-500))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(80));
+            
+            // Define arrow markers for links
+            svg.append("defs").selectAll("marker")
+                .data(["calls", "inherits", "uses", "interaction"])
+                .enter().append("marker")
+                .attr("id", d => d)
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 25)
+                .attr("refY", 0)
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("fill", d => {
+                    switch(d) {
+                        case "calls": return "#ff7f0e";
+                        case "inherits": return "#2ca02c";
+                        case "uses": return "#d62728";
+                        case "interaction": return "#9467bd";
+                        default: return "#999";
+                    }
+                })
+                .attr("d", "M0,-5L10,0L0,5");
+            
+            // Create links
+            const link = g.append("g")
+                .selectAll("line")
+                .data(agentData.links)
+                .enter().append("line")
+                .attr("class", "link")
+                .attr("stroke", d => {
+                    switch(d.type) {
+                        case "calls": return "#ff7f0e";
+                        case "inherits": return "#2ca02c";
+                        case "uses": return "#d62728";
+                        case "interaction": return "#9467bd";
+                        default: return "#999";
+                    }
+                })
+                .attr("stroke-width", 2)
+                .attr("marker-end", d => `url(#${d.type})`);
+            
+            // Create link labels
+            const linkText = g.append("g")
+                .selectAll("text")
+                .data(agentData.links)
+                .enter().append("text")
+                .attr("font-size", "10px")
+                .attr("text-anchor", "middle")
+                .text(d => d.type);
+            
+            // Create nodes
+            const node = g.append("g")
+                .selectAll("g")
+                .data(agentData.nodes)
+                .enter().append("g")
+                .attr("class", "node")
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`<strong>${d.id}</strong><br/>
+                              Type: ${d.type}<br/>
+                              ${d.description ? `Description: ${d.description}<br/>` : ''}
+                              ${d.input ? `Input: ${d.input}<br/>` : ''}
+                              ${d.output ? `Output: ${d.output}` : ''}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .on("click", function(event, d) {
+                    showDetails(d);
+                })
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+            
+            // Add circles to nodes
+            node.append("circle")
+                .attr("r", d => d.type === "base" ? 40 : 30)
+                .attr("fill", d => {
+                    switch(d.type) {
+                        case "agent": return "#1f77b4";  // blue
+                        case "tool": return "#d62728";   // red
+                        case "base": return "#2ca02c";   // green
+                        case "user": return "#9467bd";   // purple
+                        default: return "#7f7f7f";       // gray
+                    }
+                })
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 2);
+            
+            // Add text to nodes
+            node.append("text")
+                .attr("dy", ".35em")
+                .attr("text-anchor", "middle")
+                .attr("fill", "white")
+                .text(d => d.id.replace("Agent", ""));
+            
+            // Add legend
+            const legend = svg.append("g")
+                .attr("class", "legend")
+                .attr("transform", "translate(20, 20)");
+            
+            const legendData = [
+                { type: "agent", color: "#1f77b4", text: "Agent" },
+                { type: "tool", color: "#d62728", text: "Tool" },
+                { type: "base", color: "#2ca02c", text: "Base Class" },
+                { type: "user", color: "#9467bd", text: "User" }
+            ];
+            
+            const legendItems = legend.selectAll(".legend-item")
+                .data(legendData)
+                .enter().append("g")
+                .attr("class", "legend-item")
+                .attr("transform", (d, i) => `translate(0, ${i * 25})`);
+            
+            legendItems.append("circle")
+                .attr("r", 8)
+                .attr("fill", d => d.color);
+            
+            legendItems.append("text")
+                .attr("x", 15)
+                .attr("y", 5)
+                .text(d => d.text);
+            
+            // Simulation ticks
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                
+                linkText
+                    .attr("x", d => (d.source.x + d.target.x) / 2)
+                    .attr("y", d => (d.source.y + d.target.y) / 2);
+                
+                node.attr("transform", d => `translate(${d.x}, ${d.y})`);
+            });
+            
+            // Drag functions
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+            
+            // Reset zoom
+            d3.select("#reset").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                );
+            });
+            
+            // Zoom in/out
+            d3.select("#zoomIn").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    1.2
+                );
+            });
+            
+            d3.select("#zoomOut").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    0.8
+                );
+            });
+        }
+
+        // Initialize Hierarchy Diagram
+        function initHierarchyDiagram() {
+            const svg = d3.select("#hierarchy svg");
+            const width = +svg.attr("width");
+            const height = +svg.attr("height");
+            
+            // Clear previous content
+            svg.selectAll("*").remove();
+            
+            // Create a group for zoom behavior
+            const g = svg.append("g")
+                .attr("transform", `translate(${width/2}, ${50})`);
+            
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", (event) => {
+                    g.attr("transform", `translate(${event.transform.x + width/2}, ${event.transform.y + 50}) scale(${event.transform.k})`);
+                });
+            
+            svg.call(zoom);
+            
+            // Create hierarchy layout
+            const tree = d3.tree()
+                .size([width - 100, height - 100]);
+            
+            // Convert data to hierarchy
+            const root = d3.hierarchy(hierarchyData);
+            
+            // Compute layout
+            tree(root);
+            
+            // Create links
+            const link = g.selectAll(".link")
+                .data(root.links())
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", d3.linkVertical()
+                    .x(d => d.x)
+                    .y(d => d.y));
+            
+            // Create nodes
+            const node = g.selectAll(".node")
+                .data(root.descendants())
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x}, ${d.y})`)
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`<strong>${d.data.name}</strong>`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .on("click", function(event, d) {
+                    const nodeData = agentData.nodes.find(n => n.id === d.data.name);
+                    if (nodeData) showDetails(nodeData);
+                });
+            
+            // Add circles to nodes
+            node.append("circle")
+                .attr("r", d => d.data.name === "Agents" ? 10 : (d.children ? 8 : 5))
+                .attr("fill", d => {
+                    if (d.data.name === "Agents") return "#7f7f7f";
+                    if (d.data.name === "BaseAgent") return "#2ca02c";
+                    if (d.data.name === "Tools") return "#d62728";
+                    return d.data.name.endsWith("Agent") ? "#1f77b4" : "#d62728";
+                });
+            
+            // Add text to nodes
+            node.append("text")
+                .attr("dy", d => d.children ? -15 : 15)
+                .attr("x", d => d.children && d.depth !== 0 ? -13 : 0)
+                .attr("text-anchor", d => d.children && d.depth !== 0 ? "end" : "middle")
+                .text(d => d.data.name)
+                .style("font-size", "12px");
+            
+            // Reset zoom
+            d3.select("#reset").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                );
+            });
+            
+            // Zoom in/out
+            d3.select("#zoomIn").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    1.2
+                );
+            });
+            
+            d3.select("#zoomOut").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    0.8
+                );
+            });
+        }
+
+        // Initialize Sequence Diagram
+        function initSequenceDiagram() {
+            const svg = d3.select("#sequence svg");
+            const width = +svg.attr("width");
+            const height = +svg.attr("height");
+            
+            // Clear previous content
+            svg.selectAll("*").remove();
+            
+            // Create a group for zoom behavior
+            const g = svg.append("g");
+            
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            // Get unique actors
+            const actors = Array.from(new Set([
+                ...sequenceData.map(d => d.source),
+                ...sequenceData.map(d => d.target)
+            ]));
+            
+            // Calculate position
+            const actorX = {};
+            const spacing = width / (actors.length + 1);
+            
+            actors.forEach((actor, i) => {
+                actorX[actor] = spacing * (i + 1);
+            });
+            
+            // Draw actor lines (lifelines)
+            const lifelines = g.selectAll(".lifeline")
+                .data(actors)
+                .enter().append("line")
+                .attr("class", "lifeline")
+                .attr("x1", d => actorX[d])
+                .attr("y1", 60)
+                .attr("x2", d => actorX[d])
+                .attr("y2", height - 20)
+                .attr("stroke", "#ccc")
+                .attr("stroke-dasharray", "5,5");
+            
+            // Draw actor boxes
+            const actorBoxes = g.selectAll(".actor-box")
+                .data(actors)
+                .enter().append("g")
+                .attr("class", "actor-box")
+                .attr("transform", d => `translate(${actorX[d]}, 30)`);
+            
+            actorBoxes.append("rect")
+                .attr("x", -50)
+                .attr("y", 0)
+                .attr("width", 100)
+                .attr("height", 30)
+                .attr("fill", d => {
+                    if (d === "User") return "#9467bd";
+                    if (d === "CoordinatorAgent") return "#ff7f0e";
+                    return "#1f77b4";
+                })
+                .attr("rx", 5)
+                .attr("ry", 5);
+            
+            actorBoxes.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", 20)
+                .attr("fill", "white")
+                .text(d => d.replace("Agent", ""));
+            
+            // Calculate message positions
+            const messageSpacing = (height - 80) / (sequenceData.length + 1);
+            
+            // Draw messages
+            const messages = g.selectAll(".message")
+                .data(sequenceData)
+                .enter().append("g")
+                .attr("class", "message")
+                .attr("transform", (d, i) => `translate(0, ${60 + (i + 1) * messageSpacing})`);
+            
+            // Add message lines
+            messages.append("line")
+                .attr("x1", d => actorX[d.source])
+                .attr("y1", 0)
+                .attr("x2", d => actorX[d.target])
+                .attr("y2", 0)
+                .attr("stroke", "#333")
+                .attr("marker-end", "url(#arrow)");
+            
+            // Add message text
+            messages.append("text")
+                .attr("x", d => (actorX[d.source] + actorX[d.target]) / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .attr("font-size", "10px")
+                .text(d => d.action);
+            
+            // Define arrow marker
+            svg.append("defs").append("marker")
+                .attr("id", "arrow")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 10)
+                .attr("refY", 0)
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#333");
+            
+            // Reset zoom
+            d3.select("#reset").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                );
+            });
+            
+            // Zoom in/out
+            d3.select("#zoomIn").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    1.2
+                );
+            });
+            
+            d3.select("#zoomOut").on("click", function() {
+                svg.transition().duration(750).call(
+                    zoom.scaleBy,
+                    0.8
+                );
+            });
+        }
+
+        // Show details for a node
+        function showDetails(d) {
+            const detailsDiv = document.getElementById("details-content");
+            
+            // Format details based on node type
+            let details = `<h3>${d.id}</h3>`;
+            details += `<p><strong>Type:</strong> ${d.type}</p>`;
+            
+            if (d.description) {
+                details += `<p><strong>Description:</strong> ${d.description}</p>`;
+            }
+            
+            if (d.input) {
+                details += `<p><strong>Input Type:</strong> ${d.input}</p>`;
+            }
+            
+            if (d.output) {
+                details += `<p><strong>Output Type:</strong> ${d.output}</p>`;
+            }
+            
+            // Add related nodes
+            const relatedLinks = [
+                ...agentData.links.filter(link => link.source.id === d.id || link.source === d.id),
+                ...agentData.links.filter(link => link.target.id === d.id || link.target === d.id)
+            ];
+            
+            if (relatedLinks.length > 0) {
+                details += `<p><strong>Relationships:</strong></p><ul>`;
+                relatedLinks.forEach(link => {
+                    const source = typeof link.source === 'object' ? link.source.id : link.source;
+                    const target = typeof link.target === 'object' ? link.target.id : link.target;
+                    
+                    if (source === d.id) {
+                        details += `<li>${link.type} → ${target}</li>`;
+                    } else {
+                        details += `<li>${source} → ${link.type} → ${d.id}</li>`;
+                    }
+                });
+                details += `</ul>`;
+            }
+            
+            detailsDiv.innerHTML = details;
+        }
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active content
+                const tabId = tab.getAttribute('data-tab');
+                document.querySelectorAll('.diagram-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(tabId).classList.add('active');
+                
+                // Initialize the appropriate diagram
+                if (tabId === 'network') {
+                    initNetworkDiagram();
+                } else if (tabId === 'hierarchy') {
+                    initHierarchyDiagram();
+                } else if (tabId === 'sequence') {
+                    initSequenceDiagram();
+                }
+            });
+        });
+
+        // Initialize default diagram
+        initNetworkDiagram();
+    </script>
+</body>
+</html> 

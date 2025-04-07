@@ -217,6 +217,12 @@ Recent updates to AgentToast have enhanced its functionality and reliability:
    - Better handling of edge cases
    - Enhanced error recovery and graceful degradation
 
+5. **Agent Visualization Tools**:
+   - Interactive D3.js visualization for exploring agent relationships
+   - Mermaid.js diagrams for understanding agent architecture
+   - Auto-generating diagram tools that analyze actual code
+   - Visualization script for easy diagram viewing
+
 ## Project Structure
 
 - `src/`: Core source code
@@ -235,10 +241,16 @@ Recent updates to AgentToast have enhanced its functionality and reliability:
   - `utils/`: Utility functions and helpers
     - `tts.py`: Text-to-speech utilities for audio generation
     - `tracing.py`: Utilities for tracing agent execution
+    - `diagram.py`: Utilities for agent visualization
   - `config.py`: Configuration settings for the application
   - `main.py`: Main entry point for the application
 - `run_agent.py`: Command-line entry point for running agents
 - `cli.py`: Interactive CLI interface for easy configuration
+- `agent_diagram.md`: Mermaid diagrams showing agent interactions
+- `agent_diagram.html`: Interactive D3.js visualization of agent relationships
+- `generate_agent_diagram.py`: Script to auto-generate diagrams from codebase
+- `visualize_agents.sh`: Shell script to run diagram tools
+- `AGENT_DIAGRAMS.md`: Documentation on using the diagram tools
 - `output/`: Directory where output files are saved
 - `tests/`: Unit tests for the application
 - `requirements.txt`: Dependencies for the project
@@ -263,6 +275,95 @@ The system uses a team of specialized agents coordinated by a central coordinato
    - **TrendAgent**: Identifies patterns and connections
 3. **WriterAgent**: Creates a concise summary for audio output that accurately reflects the news content
 4. **CoordinatorAgent**: Orchestrates the workflow and consolidates results
+
+#### Agent Interaction Diagrams
+
+The following diagrams illustrate how agents in AgentToast interact:
+
+##### Agent Architecture Overview
+
+```mermaid
+graph TD
+    User[User] --> |1. Initiates Task| Coordinator[Coordinator Agent]
+    Coordinator --> |2. Fetch News| NewsAgent[News Agent]
+    Coordinator --> |3. Create Summary| WriterAgent[Writer Agent]
+    Coordinator --> |4. Analyze Content| AnalystAgent[Analyst Agent]
+    Coordinator --> |5. Verify Facts| FactCheckerAgent[Fact Checker Agent]
+    Coordinator --> |6. Identify Trends| TrendAgent[Trend Agent]
+    
+    NewsAgent --> |Returns Articles| Coordinator
+    WriterAgent --> |Returns Summary| Coordinator
+    AnalystAgent --> |Returns Analysis| Coordinator
+    FactCheckerAgent --> |Returns Verification| Coordinator
+    TrendAgent --> |Returns Trends| Coordinator
+    
+    Coordinator --> |Final Output| User
+    
+    class Coordinator primary;
+    classDef primary fill:#f9d,stroke:#333,stroke-width:2px;
+```
+
+##### Message Flow Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Coordinator as Coordinator Agent
+    participant News as News Agent
+    participant Writer as Writer Agent
+    participant Analyst as Analyst Agent
+    participant FactChecker as Fact Checker Agent
+    participant Trend as Trend Agent
+    
+    User->>Coordinator: Submit Task
+    Coordinator->>News: Fetch News
+    News-->>Coordinator: Return Articles
+    
+    Coordinator->>Writer: Generate Summary
+    Writer-->>Coordinator: Return Summary
+    
+    Coordinator->>Analyst: Analyze Content
+    Analyst-->>Coordinator: Return Analysis
+    
+    alt Use Fact Checker
+        Coordinator->>FactChecker: Verify Facts
+        FactChecker-->>Coordinator: Return Verification
+    end
+    
+    alt Use Trend Analyzer
+        Coordinator->>Trend: Identify Trends
+        Trend-->>Coordinator: Return Trends
+    end
+    
+    Coordinator-->>User: Deliver Final Output
+```
+
+##### Agent & Tool Relationships
+
+```mermaid
+graph LR
+    Base[Base Agent] --> |Uses| Tools[Tools]
+    
+    subgraph Agents
+        Base
+        News[News Agent]
+        Writer[Writer Agent]
+        Analyst[Analyst Agent]
+        FactChecker[Fact Checker Agent]
+        Trend[Trend Agent]
+    end
+    
+    subgraph Tools
+        News_Tool[News Tool]
+        Sentiment_Tool[Sentiment Tool]
+    end
+    
+    News --> News_Tool
+    Analyst --> Sentiment_Tool
+    Trend --> Sentiment_Tool
+```
+
+For more detailed visualizations, run the `./visualize_agents.sh` script included in the repository.
 
 ### Testing
 
