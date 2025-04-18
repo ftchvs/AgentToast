@@ -33,18 +33,36 @@ class TracingManager:
                 logger.warning("Tracing disabled: No OpenAI API key found")
     
     @contextmanager
-    def trace(self, name: str, metadata: Optional[Dict[str, Any]] = None):
-        """Context manager for tracing an operation."""
+    def trace(self, name: str, metadata: Optional[Dict[str, Any]] = None, parent_trace: Optional[Trace] = None):
+        """Context manager for tracing an operation, potentially nested.
+
+        Args:
+            name: Name of the trace operation.
+            metadata: Optional dictionary of metadata.
+            parent_trace: Optional parent Trace object for nesting.
+        """
         if not self.enabled:
             yield None
             return
             
         from agents.tracing.create import trace
-        with trace(name=name, metadata=metadata or {}) as current_trace:
-            logger.debug(f"Started trace: {name} (ID: {current_trace.trace_id})")
+        
+        # Attempt to pass parent context if provided (actual param name might differ)
+        trace_kwargs = {"name": name, "metadata": metadata or {}}
+        if parent_trace and hasattr(parent_trace, 'trace_id'):
+            # Assuming the underlying trace function might accept a parent_trace_id or similar
+            # This is speculative - adjust if the library uses a different mechanism (e.g., contextvars)
+            trace_kwargs['parent_trace_id'] = parent_trace.trace_id
+            logger.debug(f"Nesting trace '{name}' under parent {parent_trace.trace_id}")
+            
+        with trace(**trace_kwargs) as current_trace:
+            parent_id_for_log = f" under parent {parent_trace.trace_id}" if parent_trace else ""
+            logger.debug(f"Started trace: {name} (ID: {current_trace.trace_id}){parent_id_for_log}")
             yield current_trace
+            # Storing parent_id might be useful locally too
             self.traces.append({
                 "trace_id": current_trace.trace_id,
+                "parent_trace_id": parent_trace.trace_id if parent_trace else None,
                 "name": name,
                 "metadata": metadata or {}
             })

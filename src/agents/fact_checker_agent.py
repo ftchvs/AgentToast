@@ -60,7 +60,7 @@ class FactCheckerAgent(BaseAgent[FactCheckerInput, FactCheckerOutput]):
         "Use the provided web search tool to find corroborating or conflicting evidence from reliable sources. "
         "For each significant claim you identify (up to the specified maximum):\n"
         "1. Clearly state the claim.\n"
-        "2. Briefly explain the verification process (e.g., 'Searched for [query]', 'Compared with [source]').\n"
+        "2. Briefly explain the verification process (e.g., 'Searched web for [query]', 'Compared with [source]').\n"
         "3. Assess the claim as 'Verified', 'Needs Context', or 'Unverified'.\n"
         "4. Provide a concise explanation for your assessment, citing sources found using the web search tool where possible.\n"
         "5. Rate your confidence level in the assessment (High, Medium, Low).\n"

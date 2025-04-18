@@ -7,7 +7,7 @@ import os
 
 from agents import function_tool
 
-from src.agents.base_agent import BaseAgent
+from src.agents.base_agent import BaseAgent, Trace
 from src.agents.writer_agent import WriterAgent, WriterInput
 from src.tools.news_tool import fetch_news_tool, FetchNewsInput
 from src.config import get_logger
@@ -123,25 +123,33 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
             name="NewsAgent",
             instructions="""
             You are an agent that fetches and summarizes news articles.
-            Your job is to fetch news from a given category and provide a brief summary of the main points.
+            Your primary task is to use the fetch_news tool to get articles based on the user's request (category, count, etc.).
+            After fetching, review the articles and perform the following:
+            1. Create a concise summary (1-2 paragraphs) covering the main points from ALL fetched articles.
+            2. Prepare a list of the fetched articles, including their title, description, source, url, and published_at date.
             
-            1. Use the fetch_news tool to get articles from the requested category
-            2. Review the articles and extract the most important information
-            3. Create a concise summary of the news in the category
-            4. Format your response in proper Markdown format with appropriate headers and formatting
+            IMPORTANT: Structure your FINAL output as a single JSON object containing:
+            - A key "articles" whose value is a JSON list of the fetched article objects (each object having keys: "title", "description", "source", "url", "published_at").
+            - A key "summary" whose value is the concise summary string you created.
+            - A key "markdown" whose value is a string containing a user-friendly markdown representation of the articles and the summary (Use H2 for sections like '## Articles' and '## Summary').
             
-            Always follow these formatting guidelines:
-            - Use a level 1 header (# ) for the main title
-            - Use level 2 headers (## ) for major sections
-            - Use level 3 headers (### ) for subsections
-            - Use bullet points (- ) for lists of items
-            - Use proper links: [Link text](URL)
-            - Use bold (**bold**) and italics (*italics*) for emphasis
+            Example JSON Output Structure:
+            {
+              "articles": [
+                {
+                  "title": "Example Title 1", 
+                  "description": "Example description 1.", 
+                  "source": "Example Source 1", 
+                  "url": "http://example.com/1", 
+                  "published_at": "YYYY-MM-DD"
+                }, 
+                {...} 
+              ],
+              "summary": "This is the concise summary paragraph.",
+              "markdown": "## Articles\n\n### [Example Title 1](http://example.com/1)\n...\n\n## Summary\n\nThis is the concise summary paragraph."
+            }
             
-            IMPORTANT: Always include a dedicated "## Summary" or "### Key Points" section with 1-2 paragraphs
-            that concisely summarize the main takeaways from all articles. This section will be used for audio summaries.
-            
-            Your final output should be properly formatted Markdown that would render correctly on a Markdown viewer.
+            Ensure the JSON is valid. Output ONLY the JSON object and nothing else.
             """,
             tools=[fetch_news],
             verbose=verbose,
@@ -151,18 +159,19 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
         
         logger.info("NewsAgent initialized with news fetching tool")
     
-    async def run(self, input_data: NewsRequest) -> NewsSummary:
+    async def run(self, input_data: NewsRequest, parent_trace: Optional[Trace] = None) -> NewsSummary:
         """
         Run the news agent to fetch and summarize articles.
         
         Args:
             input_data: The input parameters
+            parent_trace: The parent trace for the agent's output
             
         Returns:
             A summary of the news articles
         """
-        # Run the base agent implementation
-        result = await super().run(input_data)
+        # Run the base agent implementation, passing the parent trace
+        result = await super().run(input_data, parent_trace=parent_trace)
         
         # Generate audio if requested
         if input_data.generate_audio and result.summary:
@@ -197,6 +206,9 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
                 )
                 
                 # Run the writer agent to get a concise summary
+                # TODO: Should the writer agent call also be traced under the NewsAgent trace?
+                # This would require passing the trace from super().run() down.
+                # For now, writer runs independently trace-wise within NewsAgent.
                 writer_result = await writer_agent.run(writer_input)
                 
                 # Use the writer's summary for TTS
@@ -316,276 +328,58 @@ class NewsAgent(BaseAgent[NewsRequest, NewsSummary]):
         return result
     
     def _process_output(self, output: str) -> NewsSummary:
-        """
-        Process the agent's output into a structured NewsSummary.
-        
-        Args:
-            output: The raw output string from the agent
-            
-        Returns:
-            A structured NewsSummary object
-        """
-        # Handle None output
-        if output is None:
-            self.logger.error("Received None output from agent")
-            return NewsSummary(
-                category="general",
-                article_count=0,
-                articles=[],
-                summary="Error: No output received from agent",
-                markdown=""
-            )
-            
+        """Process the agent's JSON output."""
         try:
-            # Try to parse the output as JSON
+            self.logger.debug(f"Attempting to parse NewsAgent output as JSON: {output[:500]}...")
             data = json.loads(output)
             
-            # Extract the required fields
-            category = data.get("category", "general")
-            article_count = data.get("article_count", 0)
             articles_data = data.get("articles", [])
-            summary = data.get("summary", "No summary provided")
-            
-            # Convert article data to NewsArticle objects
             articles = []
-            for article_data in articles_data:
-                article = NewsArticle(
-                    title=article_data.get("title", "No title"),
-                    description=article_data.get("description", "No description"),
-                    url=article_data.get("url", ""),
-                    source=article_data.get("source", "Unknown source"),
-                    published_at=article_data.get("published_at", "")
-                )
-                articles.append(article)
+            for article_dict in articles_data:
+                # Basic validation/handling of potentially missing keys
+                articles.append(NewsArticle(
+                    title=article_dict.get("title", "N/A"),
+                    description=article_dict.get("description", "N/A"),
+                    url=article_dict.get("url", ""),
+                    source=article_dict.get("source", "Unknown"),
+                    published_at=article_dict.get("published_at", "")
+                ))
             
-            # Create and return the NewsSummary
+            summary = data.get("summary", "Summary not found in output.")
+            markdown = data.get("markdown", None) # Markdown is optional in the output model
+
+            # Assume category comes from input, not LLM output typically
+            # We might need to pass the input category through context if needed here
+            # For now, setting a placeholder or potentially erroring if not available
+            category = "unknown" # Placeholder - ideally get from input context
+            self.logger.warning("Category not directly available in _process_output, using placeholder.")
+
             return NewsSummary(
-                category=category,
-                article_count=article_count,
-                articles=articles,
-                summary=summary,
-                markdown=summary  # Store the markdown version
-            )
-            
-        except json.JSONDecodeError:
-            # If the output is not valid JSON, attempt to extract info from text
-            self.logger.warning("Failed to parse agent output as JSON")
-            
-            # Better article extraction using pattern matching
-            articles = []
-            category = "general"
-            summary = output
-            
-            # Try to find article titles and urls in the text
-            import re
-            
-            # Extract the category from the header
-            category_match = re.search(r"#\s+(.*?)\s+News|Top Headlines in\s+(.*?)\s", output, re.IGNORECASE)
-            if category_match:
-                category = (category_match.group(1) or category_match.group(2) or "").lower().strip()
-                if category == "top":
-                    category = "top-headlines"
-            
-            # New article extraction pattern that matches numbered articles
-            # This pattern matches: "## [Number]. [Article Title](URL)" format
-            numbered_article_pattern = r"##\s+\d+\.\s+\[(.*?)\]\((.*?)\)"
-            article_matches = list(re.finditer(numbered_article_pattern, output))
-            
-            for i, match in enumerate(article_matches):
-                title = match.group(1).strip()
-                url = match.group(2).strip()
-                
-                # Get the text block between this article and the next one (or end of text)
-                start_pos = match.end()
-                end_pos = len(output)
-                if i + 1 < len(article_matches):
-                    end_pos = article_matches[i + 1].start()
-                
-                block_text = output[start_pos:end_pos]
-                
-                # Extract metadata using specific patterns
-                source_match = re.search(r"\*\*Source:\*\*\s*(.*?)(?:\n|$)", block_text)
-                published_match = re.search(r"\*\*Published At:\*\*\s*(.*?)(?:\n|$)", block_text)
-                desc_match = re.search(r"- (.*?)(?:\n\n|$)", block_text)
-                
-                source = source_match.group(1).strip() if source_match else "Unknown source"
-                published_at = published_match.group(1).strip() if published_match else ""
-                description = desc_match.group(1).strip() if desc_match else "No description"
-                
-                article = NewsArticle(
-                    title=title,
-                    description=description,
-                    url=url,
-                    source=source,
-                    published_at=published_at
-                )
-                articles.append(article)
-            
-            # If no articles found with the numbered pattern, try alternative patterns
-            if not articles:
-                # Try the pattern with article headers
-                article_pattern = r"##\s+Article\s+\d+:\s+\[(.*?)\]\((.*?)\)|##\s+\[(.*?)\]"
-                article_blocks = re.split(article_pattern, output)[1:]  # Split by article headers
-                
-                # Process blocks in chunks of 3 (title, url, remaining text)
-                for i in range(0, len(article_blocks), 3):
-                    if i+2 >= len(article_blocks):
-                        break
-                        
-                    title = article_blocks[i] if article_blocks[i] else "No title"
-                    url = article_blocks[i+1] if article_blocks[i+1] else ""
-                    block_text = article_blocks[i+2] if article_blocks[i+2] else ""
-                    
-                    # Skip if any required field is None
-                    if None in (title, url, block_text):
-                        continue
-                        
-                    title = title.strip()
-                    url = url.strip()
-                    
-                    # Extract the description, source, and published date
-                    desc_match = re.search(r"\*\*Description:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE | re.DOTALL)
-                    source_match = re.search(r"\*\*Source:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE)
-                    published_match = re.search(r"\*\*Published(?:\s+At)?:?\*\*\s*(.*?)(?:\n|$)", block_text, re.IGNORECASE)
-                    
-                    description = desc_match.group(1).strip() if desc_match else "No description"
-                    source = source_match.group(1).strip() if source_match else "Unknown source"
-                    published_at = published_match.group(1).strip() if published_match else ""
-                    
-                    article = NewsArticle(
-                        title=title,
-                        description=description,
-                        url=url,
-                        source=source,
-                        published_at=published_at
-                    )
-                    articles.append(article)
-                    
-                # If the article_pattern didn't work, try an alternative pattern for markdown lists
-                if not articles:
-                    # This pattern works with: "- **Title:** [Article Title](URL)"
-                    alt_title_pattern = r"\*\*Title:\*\*\s*\[(.*?)\]\((.*?)\)|\*\*\[(.*?)\]\((.*?)\)"
-                    alt_matches = list(re.finditer(alt_title_pattern, output))
-                    
-                    for match in alt_matches:
-                        # Handle potential None values from regex group matches
-                        groups = match.groups()
-                        title = next((g for g in groups[:2] if g is not None), "No title")
-                        url = next((g for g in groups[2:] if g is not None), "")
-                        
-                        match_pos = match.end()
-                        
-                        # Find description, source, and published date after this title
-                        desc_match = re.search(r"\*\*Description:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE | re.DOTALL)
-                        source_match = re.search(r"\*\*Source:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE)
-                        published_match = re.search(r"\*\*Published(?:\s+At)?:?\*\*\s*(.*?)(?:\n|$)", output[match_pos:match_pos+500], re.IGNORECASE)
-                        
-                        description = desc_match.group(1).strip() if desc_match else "No description"
-                        source = source_match.group(1).strip() if source_match else "Unknown source"
-                        published_at = published_match.group(1).strip() if published_match else ""
-                        
-                        article = NewsArticle(
-                            title=title,
-                            description=description,
-                            url=url,
-                            source=source,
-                            published_at=published_at
-                        )
-                        articles.append(article)
-            
-            # Try to extract the summary section
-            summary_match = re.search(r"(?:##\s+Summary|\n+##\s+Summary|\n+###\s+Summary|\n+###\s+Key Points):?(.*?)(?:\n+##|\Z)", output, re.DOTALL | re.IGNORECASE)
-            if summary_match:
-                summary = summary_match.group(1).strip()
-            
-            # Add manual article extraction based on the output format we're seeing
-            if not articles:
-                self.logger.warning("Trying manual article extraction pattern")
-                # Extract articles from the observed format
-                lines = output.strip().split('\n')
-                article_start_indices = []
-                
-                # Find all article starting lines
-                for i, line in enumerate(lines):
-                    if re.match(r'^##\s+\d+\.\s+\[.*\]\(.*\)', line):
-                        article_start_indices.append(i)
-                
-                # Process each article
-                for i, start_idx in enumerate(article_start_indices):
-                    # Get the article block
-                    end_idx = article_start_indices[i+1] if i+1 < len(article_start_indices) else len(lines)
-                    article_lines = lines[start_idx:end_idx]
-                    
-                    # Extract title and URL
-                    title_line = article_lines[0]
-                    title_match = re.search(r'\[(.*?)\]\((.*?)\)', title_line)
-                    
-                    if title_match:
-                        title = title_match.group(1)
-                        url = title_match.group(2)
-                        
-                        # Look for source and published date
-                        source = "Unknown source"
-                        published_at = ""
-                        description = ""
-                        
-                        for line in article_lines[1:]:
-                            if "**Source:**" in line:
-                                source = line.split("**Source:**")[-1].strip()
-                            elif "**Published At:**" in line:
-                                published_at = line.split("**Published At:**")[-1].strip()
-                            elif line.startswith('- '):
-                                description = line[2:].strip()
-                        
-                        article = NewsArticle(
-                            title=title,
-                            description=description,
-                            url=url,
-                            source=source,
-                            published_at=published_at
-                        )
-                        articles.append(article)
-            
-            # Log the results
-            self.logger.info(f"Extracted {len(articles)} articles from markdown format")
-            if articles:
-                for i, article in enumerate(articles):
-                    self.logger.info(f"Article {i+1}: {article.title[:50]}... (source: {article.source})")
-            else:
-                self.logger.warning("No articles could be extracted from the markdown output")
-                
-                # Extract headlines directly from raw markdown as a last resort
-                headline_matches = re.finditer(r'(?:##|###)\s+\d+\.\s+\[(.*?)\]\((.*?)\)', output)
-                for match in headline_matches:
-                    title = match.group(1)
-                    url = match.group(2)
-                    self.logger.info(f"Found headline: {title}")
-                    
-                    article = NewsArticle(
-                        title=title,
-                        description="Extracted from headline",
-                        url=url,
-                        source="Unknown source",
-                        published_at=""
-                    )
-                    articles.append(article)
-                
-                self.logger.info(f"Extracted {len(articles)} articles from headlines as fallback")
-            
-            return NewsSummary(
-                category=category,
+                category=category, # Needs to be set correctly
                 article_count=len(articles),
                 articles=articles,
                 summary=summary,
-                markdown=output  # Store the full markdown output
+                markdown=markdown
+            )
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse NewsAgent output as JSON: {e}")
+            self.logger.debug(f"Raw output causing JSON error: {output}")
+            # Fallback or error handling if JSON parsing fails
+            # Returning an empty/error state might be safer than trying complex regex
+            return NewsSummary(
+                category="error", 
+                article_count=0, 
+                articles=[], 
+                summary=f"Error: Failed to parse agent output. Output was: {output[:200]}...",
+                markdown=f"# Error\nFailed to parse agent output.\n\nRaw output:\n```\n{output}\n```"
             )
         except Exception as e:
-            # Log any other errors and return a minimal object
-            self.logger.error(f"Error processing agent output: {str(e)}")
+            self.logger.exception(f"An unexpected error occurred processing NewsAgent output: {e}")
             return NewsSummary(
-                category="general",
-                article_count=0,
-                articles=[],
-                summary=f"Error processing output: {str(e)}",
-                markdown=output if output is not None else ""
+                category="error", 
+                article_count=0, 
+                articles=[], 
+                summary=f"Error: Unexpected error processing output: {str(e)}",
+                markdown=f"# Error\nUnexpected error processing output: {str(e)}"
             ) 

@@ -6,6 +6,9 @@ import logging
 from src.agents.base_agent import BaseAgent, InputT, OutputT # Use existing base
 from src.tools.finance_tool import get_stock_info, StockInfo # Import the tool and its model
 from src.config import get_logger
+from src.utils.tracing import tracing # Ensure tracing is imported
+from agents.tracing.traces import Trace # Import Trace for type hinting
+from agents.tracing.spans import Span # Import Span for type hinting
 
 class FinanceInput(BaseModel):
     symbol: str = Field(..., description="The stock ticker symbol to fetch information for.")
@@ -40,31 +43,61 @@ class FinanceAgent(BaseAgent[FinanceInput, FinanceOutput]):
         self.logger = get_logger("agent.finance")
 
     # Override run_sync as we are not using the LLM runner for this agent
-    def run_sync(self, input_data: FinanceInput) -> FinanceOutput | FinanceErrorOutput:
-        """Fetches stock info directly using the tool."""
+    def run_sync(self, input_data: FinanceInput, parent_trace: Optional[Trace] = None) -> FinanceOutput | FinanceErrorOutput:
+        """Fetches stock info directly using the tool, participating in tracing."""
         self.logger.info(f"Fetching finance data for symbol: {input_data.symbol}")
-        try:
-            # Call the finance tool directly
-            stock_json = get_stock_info(input_data.symbol)
-            stock_data = json.loads(stock_json)
+        
+        # Determine the context manager based on parent_trace
+        tracer_context = tracing.span if parent_trace else tracing.trace
+        context_kwargs = {
+            "name": f"{self.name}_execution", 
+            "metadata": {"input": input_data.model_dump()}
+        }
 
-            if "error" in stock_data:
-                self.logger.error(f"Error fetching data for {input_data.symbol}: {stock_data['error']}")
-                return FinanceErrorOutput(error=stock_data["error"], symbol=input_data.symbol)
-            else:
-                # Use the StockInfo model for parsing and validation
-                parsed_output = FinanceOutput(**stock_data)
-                self.logger.info(f"Successfully fetched data for {input_data.symbol}")
-                if self.verbose:
-                    self.logger.debug(f"Data: {parsed_output.model_dump_json(indent=2)}")
-                return parsed_output
+        # Use span if nested, otherwise start a new trace
+        with tracer_context(**context_kwargs) as current_op: # current_op can be a Trace or Span
+            try:
+                # Call the finance tool directly - maybe wrap this in a processing span too?
+                with tracing.span(f"{self.name}_processing") as processing_span:
+                    stock_json = get_stock_info(input_data.symbol)
+                    stock_data = json.loads(stock_json)
+                    
+                    # Record results in processing_span
+                    if processing_span: 
+                         processing_span.set_data({"raw_output": stock_json[:500] + "..." if len(stock_json)>500 else stock_json}) # Log raw output snippet
 
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse JSON response for {input_data.symbol}: {e}")
-            return FinanceErrorOutput(error="Failed to parse finance tool response", symbol=input_data.symbol)
-        except Exception as e:
-            self.logger.exception(f"An unexpected error occurred fetching data for {input_data.symbol}: {e}")
-            return FinanceErrorOutput(error=f"An unexpected error occurred: {str(e)}", symbol=input_data.symbol)
+                if "error" in stock_data:
+                    error_msg = stock_data['error']
+                    self.logger.error(f"Error fetching data for {input_data.symbol}: {error_msg}")
+                    # Set trace error on the main operation span/trace
+                    if current_op and hasattr(current_op, 'set_error'): 
+                        current_op.set_error({"message": "Error fetching data", "details": error_msg})
+                    return FinanceErrorOutput(error=error_msg, symbol=input_data.symbol)
+                else:
+                    # Use the StockInfo model for parsing and validation
+                    parsed_output = FinanceOutput(**stock_data)
+                    self.logger.info(f"Successfully fetched data for {input_data.symbol}")
+                    if self.verbose:
+                        self.logger.debug(f"Data: {parsed_output.model_dump_json(indent=2)}")
+                    # Set trace data on success on the main operation span/trace
+                    if current_op: 
+                        current_op.set_data({"status": "success", "output": parsed_output.model_dump()})
+                    return parsed_output
+
+            except json.JSONDecodeError as e:
+                error_msg = "Failed to parse finance tool response"
+                self.logger.error(f"Failed to parse JSON response for {input_data.symbol}: {e}")
+                # Set trace error on the main operation span/trace
+                if current_op and hasattr(current_op, 'set_error'): 
+                    current_op.set_error({"message": error_msg, "details": str(e)})
+                return FinanceErrorOutput(error=error_msg, symbol=input_data.symbol)
+            except Exception as e:
+                error_msg = f"An unexpected error occurred: {str(e)}"
+                self.logger.exception(f"An unexpected error occurred fetching data for {input_data.symbol}: {e}")
+                # Set trace error on the main operation span/trace
+                if current_op and hasattr(current_op, 'set_error'): 
+                    current_op.set_error({"message": error_msg})
+                return FinanceErrorOutput(error=error_msg, symbol=input_data.symbol)
 
     # Implement abstract methods from BaseAgent, even if not used by run_sync
     def _prepare_input(self, input_data: FinanceInput) -> str:

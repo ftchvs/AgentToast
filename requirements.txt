@@ -13,7 +13,6 @@ beautifulsoup4
 markdownify
 tiktoken
 rich
-d3graph
 psutil
 yfinance
 

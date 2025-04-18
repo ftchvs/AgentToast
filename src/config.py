@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Agent configuration
-DEFAULT_MODEL = "gpt-3.5-turbo"
+DEFAULT_MODEL = "gpt-4o"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Model configuration
@@ -17,14 +17,20 @@ MODEL_CONFIG: Dict[str, Dict[str, any]] = {
     "gpt-3.5-turbo": {
         "name": "GPT-3.5 Turbo",
         "max_tokens": 4096,
-        "temperature": 0.7,
+        "temperature": 0.1,
         "timeout": 30
     },
     "gpt-4-turbo-preview": {
         "name": "GPT-4 Turbo",
         "max_tokens": 4096,
-        "temperature": 0.7,
+        "temperature": 0.1,
         "timeout": 45
+    },
+    "gpt-4o": {
+        "name": "GPT-4o",
+        "max_tokens": 4096,
+        "temperature": 0.1,
+        "timeout": 60
     }
 }
 

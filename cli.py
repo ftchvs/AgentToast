@@ -41,7 +41,7 @@ ANALYSIS_DEPTHS = ["basic", "moderate", "deep"]
 SUMMARY_STYLES = ["formal", "conversational", "brief"]
 VOICE_OPTIONS = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 AGENT_MODES = ["coordinator", "news", "planner", "all"]
-MODEL_OPTIONS = ["gpt-3.5-turbo", "gpt-4-turbo-preview"]
+MODEL_OPTIONS = ["gpt-3.5-turbo", "gpt-4-turbo-preview", "gpt-4o"]
 
 def validate_count(value, answers=None) -> bool:
     """Validate the article count is between 1 and 10."""
@@ -119,11 +119,16 @@ def get_cli_args() -> Dict[str, Any]:
             default="5",
             validate=validate_count
         ),
+        inquirer.Text(
+            "ticker",
+            message="Enter stock ticker symbol (e.g., AAPL) or leave empty",
+            default=""
+        ),
         inquirer.List(
             "model",
-            message="Select AI model to use",
+            message="Select AI model to use (Default)",
             choices=MODEL_OPTIONS,
-            default="gpt-3.5-turbo"
+            default="gpt-4o"
         ),
         inquirer.Text(
             "temperature",
@@ -138,6 +143,10 @@ def get_cli_args() -> Dict[str, Any]:
     
     # Convert count to integer
     answers["count"] = int(answers["count"])
+    
+    # Handle ticker (set to None if empty)
+    if not answers["ticker"]:
+        answers["ticker"] = None
     
     # Convert temperature to float if provided
     if answers["temperature"]:
@@ -305,43 +314,86 @@ def get_cli_args() -> Dict[str, Any]:
     if "output_dir" not in answers:
         answers["output_dir"] = "output"
     
-    # Convert to run_agent argument format
-    args = argparse.Namespace()
+    # -- Ask about Per-Agent Model Overrides --
+    answers["news_model"] = None
+    answers["planner_model"] = None
+    answers["analyst_model"] = None
+    answers["factchecker_model"] = None
+    answers["trend_model"] = None
+    answers["writer_model"] = None
+
+    override_question = [
+        inquirer.Confirm(
+            "override_models", 
+            message=f"Default model is {answers['model']}. Override specific agent models?", 
+            default=False
+        )
+    ]
+    override_answer = inquirer.prompt(override_question)
+
+    if override_answer and override_answer["override_models"]:
+        print("\nEnter model for each agent (leave empty to use default):")
+        # Define choices including the default option
+        model_choices_with_default = ["(default)"] + MODEL_OPTIONS
+        
+        agent_model_questions = [
+            inquirer.List("news_model", message="NewsAgent model", choices=model_choices_with_default, default="(default)"),
+            inquirer.List("planner_model", message="PlannerAgent model", choices=model_choices_with_default, default="(default)"),
+            inquirer.List("analyst_model", message="AnalystAgent model", choices=model_choices_with_default, default="(default)"),
+            inquirer.List("factchecker_model", message="FactCheckerAgent model", choices=model_choices_with_default, default="(default)"),
+            inquirer.List("trend_model", message="TrendAgent model", choices=model_choices_with_default, default="(default)"),
+            inquirer.List("writer_model", message="WriterAgent model", choices=model_choices_with_default, default="(default)"),
+        ]
+        agent_model_answers = inquirer.prompt(agent_model_questions)
+        
+        # Set overrides only if not '(default)'
+        for agent_key, model_choice in agent_model_answers.items():
+            if model_choice != "(default)":
+                answers[agent_key] = model_choice
+            else:
+                answers[agent_key] = None # Ensure it's None if default is chosen
+    # ------------------------------------------
+
+    # Map answers to argparse Namespace structure expected by run_agent functions
+    args_namespace = argparse.Namespace(
+        agent=answers.get("agent"),
+        category=answers.get("category"),
+        count=answers.get("count"),
+        model=answers.get("model"), # Default model
+        temperature=answers.get("temperature"),
+        ticker=answers.get("ticker"), # Added ticker
+        # Add agent model overrides
+        news_model=answers.get("news_model"),
+        planner_model=answers.get("planner_model"),
+        analyst_model=answers.get("analyst_model"),
+        factchecker_model=answers.get("factchecker_model"),
+        trend_model=answers.get("trend_model"),
+        writer_model=answers.get("writer_model"),
+        # Analysis options (conditionally added)
+        analysis_depth=answers.get("analysis_depth"),
+        no_fact_check=not answers.get("use_fact_check", True), # Invert logic for argparse
+        no_trend_analysis=not answers.get("use_trend_analysis", True), # Invert logic for argparse
+        max_fact_claims=answers.get("max_fact_claims", 5),
+        # Audio options (conditionally added)
+        no_audio=not answers.get("generate_audio", True), # Invert logic for argparse
+        voice=answers.get("voice", "alloy"),
+        summary_style=answers.get("summary_style", "conversational"),
+        play_audio=answers.get("play_audio", False),
+        # Output options
+        save_markdown=answers.get("save_markdown", False),
+        save_analysis=answers.get("save_analysis", False),
+        full_report=answers.get("full_report", False),
+        verbose=answers.get("verbose", False),
+        trace=answers.get("trace", False),
+        # Add other args from run_agent.py parser with defaults if not asked
+        country=None, 
+        sources=None,
+        query=None,
+        page=None,
+        output_dir="output" 
+    )
     
-    # Basic options
-    args.agent = answers["agent"]
-    args.category = answers["category"]
-    args.count = answers["count"]
-    args.model = answers["model"]
-    args.temperature = answers["temperature"]
-    args.verbose = answers.get("verbose", False)
-    args.trace = answers.get("trace", False)
-    
-    # Audio options
-    args.no_audio = not answers.get("generate_audio", True)
-    args.voice = answers.get("voice", "alloy")
-    args.play_audio = answers.get("play_audio", False)
-    args.summary_style = answers.get("summary_style", "conversational")
-    
-    # Analysis options
-    args.analysis_depth = answers.get("analysis_depth", "moderate")
-    args.no_fact_check = not answers.get("use_fact_check", True)
-    args.no_trend_analysis = not answers.get("use_trend_analysis", True)
-    args.max_fact_claims = answers.get("max_fact_claims", 5)
-    
-    # Output options
-    args.save_markdown = answers.get("save_markdown", False)
-    args.save_analysis = answers.get("save_analysis", False)
-    args.full_report = answers.get("full_report", False)
-    args.output_dir = answers.get("output_dir", "output")
-    
-    # Advanced News API options
-    args.country = answers.get("country", None)
-    args.sources = answers.get("sources", None)
-    args.query = answers.get("query", None)
-    args.page = answers.get("page", None)
-    
-    return args
+    return args_namespace
 
 async def main():
     """Main function to run the interactive CLI."""

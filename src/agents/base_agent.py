@@ -9,6 +9,8 @@ from agents import Agent as OpenAIAgent
 from agents import Tool as OpenAITool
 from agents import Runner
 from agents import ModelSettings
+from agents.tracing.traces import Trace
+from agents.tracing.spans import Span
 
 from src.config import DEFAULT_MODEL, MODEL, MODEL_NAME, get_logger
 from src.utils.tracing import tracing
@@ -73,12 +75,13 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
         self.agent.tools.append(tool)
         self.logger.debug(f"Added tool: {tool.name}")
     
-    async def run(self, input_data: InputT) -> OutputT:
+    async def run(self, input_data: InputT, parent_trace: Optional[Trace] = None) -> OutputT:
         """
         Run the agent asynchronously.
         
         Args:
             input_data: The input data for the agent
+            parent_trace: Optional parent Trace object for nesting.
             
         Returns:
             The agent's output
@@ -86,11 +89,22 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
         if self.verbose:
             self.logger.debug(f"Running agent with input: {input_data}")
         
-        # Use the tracing manager to create a trace
-        with tracing.trace(f"{self.name}_execution", {"input": input_data.model_dump()}) as trace:
+        # Determine the context manager based on parent_trace
+        tracer_context = tracing.span if parent_trace else tracing.trace
+        context_kwargs = {
+            "name": f"{self.name}_execution", 
+            "metadata": {"input": input_data.model_dump()}
+        }
+        if not parent_trace: # Only pass parent_trace to trace, not span
+             # We actually don't need to pass parent_trace to trace if creating a new one.
+             # Let's simplify - span if parent, trace otherwise.
+             pass 
+
+        # Use span if nested, otherwise start a new trace
+        with tracer_context(**context_kwargs) as current_op: # current_op can be a Trace or Span
             try:
-                # Use a span to track the actual execution
-                with tracing.span(f"{self.name}_processing") as span:
+                # Use a nested span for the actual processing within the execution
+                with tracing.span(f"{self.name}_processing") as processing_span:
                     # Convert input to string if needed
                     input_str = self._prepare_input(input_data)
                     
@@ -106,9 +120,9 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
                     # Process the result
                     output = self._process_output(result.final_output)
                     
-                    # Record the result in the span
-                    if span:
-                        span.set_data({
+                    # Record the result in the processing span
+                    if processing_span:
+                        processing_span.set_data({
                             "status": "success",
                             "model": self.model,
                             "output": output.model_dump() if hasattr(output, "model_dump") else output
@@ -122,9 +136,13 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
                     return output
                     
             except Exception as e:
-                # Record the error in the span
-                if 'span' in locals() and span:
-                    span.set_error({"message": str(e), "model": self.model})
+                # Record the error in the main operation (trace or span)
+                if current_op:
+                    # Use set_error if available (both Trace and Span should have it)
+                    if hasattr(current_op, 'set_error'):
+                         current_op.set_error({"message": str(e), "model": self.model})
+                    else: # Fallback: add to metadata if set_error is missing
+                         current_op.set_data({"status": "error", "error_message": str(e), "model": self.model})
                 
                 # Log the error
                 self.logger.error(f"Error running agent with model {self.model}: {str(e)}")
@@ -132,12 +150,13 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
                 # Re-raise the exception
                 raise
     
-    def run_sync(self, input_data: InputT) -> OutputT:
+    def run_sync(self, input_data: InputT, parent_trace: Optional[Trace] = None) -> OutputT:
         """
         Run the agent synchronously.
         
         Args:
             input_data: The input data for the agent
+            parent_trace: Optional parent Trace object for nesting.
             
         Returns:
             The agent's output
@@ -145,11 +164,20 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
         if self.verbose:
             self.logger.debug(f"Running agent synchronously with input: {input_data}")
         
-        # Use the tracing manager to create a trace
-        with tracing.trace(f"{self.name}_execution", {"input": input_data.model_dump()}) as trace:
+        # Determine the context manager based on parent_trace
+        tracer_context = tracing.span if parent_trace else tracing.trace
+        context_kwargs = {
+            "name": f"{self.name}_execution", 
+            "metadata": {"input": input_data.model_dump()}
+        }
+        # If not parent_trace, we are using tracing.trace, which doesn't need parent_trace param.
+        # If parent_trace, we are using tracing.span, which doesn't accept parent_trace param.
+
+        # Use span if nested, otherwise start a new trace
+        with tracer_context(**context_kwargs) as current_op: # current_op can be a Trace or Span
             try:
-                # Use a span to track the actual execution
-                with tracing.span(f"{self.name}_processing") as span:
+                # Use a nested span for the actual processing within the execution
+                with tracing.span(f"{self.name}_processing") as processing_span:
                     # Convert input to string if needed
                     input_str = self._prepare_input(input_data)
                     
@@ -165,9 +193,9 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
                     # Process the result
                     output = self._process_output(result.final_output)
                     
-                    # Record the result in the span
-                    if span:
-                        span.set_data({
+                    # Record the result in the processing span
+                    if processing_span:
+                        processing_span.set_data({
                             "status": "success",
                             "model": self.model,
                             "output": output.model_dump() if hasattr(output, "model_dump") else output
@@ -181,10 +209,14 @@ class BaseAgent(Generic[InputT, OutputT], ABC):
                     return output
                     
             except Exception as e:
-                # Record the error in the span
-                if 'span' in locals() and span:
-                    span.set_error({"message": str(e), "model": self.model})
-                
+                # Record the error in the main operation (trace or span)
+                if current_op:
+                     # Use set_error if available (both Trace and Span should have it)
+                    if hasattr(current_op, 'set_error'):
+                         current_op.set_error({"message": str(e), "model": self.model})
+                    else: # Fallback: add to metadata if set_error is missing
+                         current_op.set_data({"status": "error", "error_message": str(e), "model": self.model})
+
                 # Log the error
                 self.logger.error(f"Error running agent with model {self.model}: {str(e)}")
                 

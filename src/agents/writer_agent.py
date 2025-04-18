@@ -3,6 +3,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 import logging
+import json
 
 from agents import function_tool
 from src.agents.base_agent import BaseAgent
@@ -19,24 +20,40 @@ class WriterInput(BaseModel):
     articles: List[dict] = Field(
         description="List of news articles with title, description, source, url and published_at",
     )
-    max_length: int = Field(
-        description="Maximum length of the summary in characters",
-        default=500
-    )
-    style: str = Field(
+    summary_style: str = Field(
         description="Style of the summary (e.g., formal, conversational, brief)",
         default="conversational"
     )
-    additional_context: Optional[str] = Field(
+    context: Optional[str] = Field(
         description="Additional context such as news summary, fact checks, analysis, and trends",
+        default=None
+    )
+    generate_audio: bool = Field(
+        description="Whether the final output should include a request for audio generation",
+        default=True
+    )
+    voice: Optional[str] = Field(
+        description="The desired voice for audio generation",
+        default="alloy"
+    )
+    output_dir: Optional[str] = Field(
+        description="Directory to save output files",
         default=None
     )
 
 class WriterOutput(BaseModel):
     """Output from the writer agent."""
     
-    summary: str = Field(
-        description="A concise 1-2 paragraph summary of the news articles"
+    final_summary: str = Field(
+        description="The final concise 1-2 paragraph summary of the news articles suitable for reading or TTS."
+    )
+    markdown_output: Optional[str] = Field(
+        description="A potentially more detailed markdown version of the summary/report.",
+        default=None
+    )
+    audio_file: Optional[str] = Field(
+        description="Path to the generated audio file (if requested and successful).",
+        default=None
     )
 
 class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
@@ -86,4 +103,10 @@ class WriterAgent(BaseAgent[WriterInput, WriterOutput]):
     
     def _process_output(self, output: str) -> WriterOutput:
         """Process the agent output into the proper format."""
-        return WriterOutput(summary=output.strip()) 
+        processed_summary = output.strip()
+        
+        return WriterOutput(
+            final_summary=processed_summary, 
+            markdown_output=processed_summary,
+            audio_file=None
+        ) 

@@ -99,7 +99,7 @@ parser.add_argument("--play-audio", action="store_true",
                     help="Play the generated audio file")
 parser.add_argument("--agent", type=str, choices=["planner", "news", "coordinator", "all"], default="coordinator",
                     help="Agent to run (planner, news, coordinator, or all)")
-parser.add_argument("--model", type=str, choices=list(MODEL_CONFIG.keys()), default=MODEL_NAME,
+parser.add_argument("--model", type=str, choices=list(MODEL_CONFIG.keys()), default="gpt-4o",
                     help="Default model to use for agent execution if specific agent model is not set")
 parser.add_argument("--news-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
                     help="Model override for NewsAgent")
@@ -476,6 +476,14 @@ Status: {"✓ Success" if agent_result.success else "✗ Failed"}
         # Pretty print the JSON data
         print(json.dumps(result.financial_data, indent=2))
         print("-"*60)
+        
+    # Print graph file paths if available
+    if result.graph_files:
+        print("\nGENERATED GRAPHS:")
+        print("-"*60)
+        for graph_file in result.graph_files:
+            print(f"- {graph_file}")
+        print("-"*60)
     
     # Display audio information if generated
     if result.audio_file:
@@ -492,11 +500,14 @@ Status: {"✓ Success" if agent_result.success else "✗ Failed"}
             except Exception as e:
                 print(f"Error playing audio: {str(e)}")
     
+    # Fetch traces before attempting to print
+    # traces = coordinator.get_traces() # Use coordinator instance if available, or handle differently
+
     # Print trace information if available
-    if traces:
-        print("\nTrace Information:")
-        for trace in traces:
-            print(f"- {trace['name']}: {trace['trace_id']}")
+    # if traces:
+    #     print("\nTrace Information:")
+    #     for trace in traces:
+    #         print(f"- {trace['name']}: {trace['trace_id']}")
     
     # Print specific model overrides if set
     overrides = {

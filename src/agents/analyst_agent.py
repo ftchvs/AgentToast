@@ -6,9 +6,9 @@ import logging
 import json
 import re
 
-from agents import WebSearchTool
 from src.agents.base_agent import BaseAgent
 from src.config import get_logger
+from agents import WebSearchTool
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,10 @@ class AnalystInput(BaseModel):
     depth: str = Field(
         description="Level of analysis depth (basic, moderate, deep)",
         default="moderate"
+    )
+    financial_data: Optional[Dict] = Field(
+        description="Optional financial data dictionary for the ticker, if requested.",
+        default=None
     )
 
 class AnalystOutput(BaseModel):
@@ -52,17 +56,17 @@ class AnalystAgent(BaseAgent[AnalystInput, AnalystOutput]):
     """Agent that analyzes news articles to provide deeper insights."""
     
     DEFAULT_INSTRUCTIONS = (
-        "You are an expert News Analyst AI. Your goal is to provide insightful analysis based on the provided news articles, summary, and category. "
+        "You are an expert News Analyst AI. Your goal is to provide insightful analysis based on the provided news articles, summary, category, and optional financial data. "
         "Consider the specified analysis depth (basic, moderate, deep). "
         "Use the web search tool to gather broader context, identify related developments, or uncover underlying factors not mentioned in the articles. "
         "Your analysis should cover:\n"
-        "1. Key Insights: What are the most important takeaways from the news?\n"
-        "2. Context and Background: What relevant background information or context (potentially found via web search) helps understand the situation?\n"
-        "3. Potential Implications: What are the likely short-term and long-term consequences or impacts?\n"
-        "4. Connections/Patterns: Are there any connections between the articles or links to broader trends (use web search to confirm or discover)?\n"
+        "1. Key Insights: What are the most important takeaways from the news and data?\n"
+        "2. Context and Background: What relevant background information or context (potentially found via web search or within financial_data) helps understand the situation?\n"
+        "3. Potential Implications: What are the likely short-term and long-term consequences or impacts based on news and data?\n"
+        "4. Connections/Patterns: Are there any connections between the articles or links to broader trends (use web search or data to confirm or discover)?\n"
         "5. Unanswered Questions: What important questions remain unanswered?\n"
         "Structure your output clearly with sections for Insights, Context, Implications, Connections, and Unanswered Questions. "
-        "Cite sources from your web search where appropriate."
+        "Cite sources from your web search where appropriate. "
     )
 
     def __init__(self, verbose: bool = False, model: str = None, temperature: float = None):

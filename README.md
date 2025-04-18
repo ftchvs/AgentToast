@@ -14,6 +14,7 @@ A powerful multi-agent AI framework built on the OpenAI Agents SDK for comprehen
    ```bash
    pip install -r requirements.txt
    ```
+   (This now includes `matplotlib` and `pandas` for graphing capabilities.)
 4. Create a `.env` file with your OpenAI API key and News API key:
    ```
    OPENAI_API_KEY=your_openai_api_key_here
@@ -145,6 +146,8 @@ python run_agent.py --agent coordinator --category politics --save-markdown --sa
 - **Multiple Voice Options**: Choose from different voices for audio output.
 - **Comprehensive Reports**: Generate detailed reports combining all agent outputs.
 - **Top Headlines Category**: Get the most important news across all categories.
+- **Graphing Tool**: Used by AnalystAgent to create visualizations (line/bar charts) of data.
+- **Data Visualization**: AnalystAgent can generate graphs (saved as PNG) based on analysis or financial data.
 
 ## News Categories
 
@@ -246,6 +249,7 @@ Recent updates to AgentToast have enhanced its functionality and reliability:
     - `news_tool.py`: Tool for fetching news from NewsAPI
     - `finance_tool.py`: Tool for fetching stock data from Yahoo Finance
     - `sentiment_tool.py`: Tool for sentiment analysis of news content
+    - `graphing_tool.py`: Tool for generating graphs (uses Matplotlib/Pandas).
   - `utils/`: Utility functions and helpers
     - `tts.py`: Text-to-speech utilities for audio generation
     - `tracing.py`: Utilities for tracing agent execution
@@ -259,9 +263,10 @@ Recent updates to AgentToast have enhanced its functionality and reliability:
 - `generate_agent_diagram.py`: Script to auto-generate diagrams from codebase
 - `visualize_agents.sh`: Shell script to run diagram tools
 - `AGENT_DIAGRAMS.md`: Documentation on using the diagram tools
-- `output/`: Directory where output files are saved
-- `tests/`: Unit tests for the application
-- `requirements.txt`: Dependencies for the project
+- `output/`: Directory where output files (summaries, reports, audio, graphs) are saved.
+  - `graphs/`: Subdirectory where generated graph PNGs are saved.
+- `tests/`: Unit tests for the application.
+- `requirements.txt`: Dependencies for the project (including `matplotlib`, `pandas`).
 
 ## Development
 
@@ -353,22 +358,30 @@ graph LR
     Base[Base Agent] --> |Uses| Tools[Tools]
     
     subgraph Agents
+        direction LR
         Base
         News[News Agent]
         Writer[Writer Agent]
         Analyst[Analyst Agent]
         FactChecker[Fact Checker Agent]
         Trend[Trend Agent]
+        Finance[Finance Agent]
     end
     
     subgraph Tools
+        direction LR
+        WebSearch[Web Search Tool]
         News_Tool[News Tool]
-        Sentiment_Tool[Sentiment Tool]
+        Finance_Tool[Finance Tool]
+        Graphing_Tool[Graphing Tool]
     end
     
     News --> News_Tool
-    Analyst --> Sentiment_Tool
-    Trend --> Sentiment_Tool
+    Analyst --> WebSearch
+    Analyst --> Graphing_Tool
+    FactChecker --> WebSearch
+    Trend --> WebSearch
+    Finance -.-> Finance_Tool # (Implicitly uses yfinance)
 ```
 
 For more detailed visualizations, run the `./visualize_agents.sh` script included in the repository.
@@ -389,6 +402,7 @@ pytest
 - **Flexible Model Choice**: Set default or per-agent LLMs via CLI
 - **Context-Aware Writer**: The WriterAgent uses additional context from analysis and fact-checking to create more informative summaries
 - **Parallel Processing**: Analysis, fact-checking, and trend detection run simultaneously for efficiency
+- **Graph Generation**: Analyst agent can visualize data by creating plots.
 - **Flexible Output Options**: Generate everything from brief audio summaries to comprehensive written reports
 - **Custom Summary Styles**: Choose between formal, conversational, or brief summary styles to match your preference
 - **Robust Error Handling**: Graceful handling of API errors, parsing issues, and edge cases 
