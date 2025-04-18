@@ -1,10 +1,11 @@
 """Trend agent for identifying patterns and trends across news articles."""
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 import logging
+import json
 
-from agents import function_tool
+from agents import function_tool, WebSearchTool
 from src.agents.base_agent import BaseAgent
 from src.config import get_logger
 
@@ -49,58 +50,44 @@ class TrendOutput(BaseModel):
     )
 
 class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
-    """Agent that identifies trends and patterns in news articles."""
-    
-    def __init__(self, verbose: bool = False, model: str = None, temperature: float = None):
-        """Initialize the trend agent."""
-        
+    """Agent responsible for identifying trends across multiple news articles."""
+
+    DEFAULT_INSTRUCTIONS = (
+        "You are a Trend Analysis AI. Your goal is to identify emerging, growing, or established trends "
+        "based on a collection of news articles within a specific category. "
+        "Use the web search tool to validate potential trends, find supporting evidence beyond the provided articles, or discover related emerging patterns. "
+        "For each trend identified:\n"
+        "1. Describe the trend clearly.\n"
+        "2. Classify its strength (e.g., Emerging, Growing, Established).\n"
+        "3. Estimate its timeframe (e.g., Short-term, Medium-term, Long-term).\n"
+        "4. Provide supporting evidence, citing the articles or web search results.\n"
+        "5. Briefly explain the potential implications of the trend.\n"
+        "Also, identify any potential \"meta-trends\" that connect multiple individual trends. "
+        "Finally, provide a concise overall summary of the key trends discovered.\n"
+        "Focus on patterns supported by evidence."
+    )
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        verbose: bool = False
+    ):
         super().__init__(
             name="TrendAgent",
-            instructions="""
-            You are an expert trend analyst specializing in identifying emerging patterns in news.
-            
-            Your task is to:
-            1. Identify significant trends and patterns in the provided news articles
-            2. Connect these trends to broader movements or shifts when possible
-            3. Assess the strength and potential trajectory of each trend
-            4. Provide insightful analysis of what these trends might mean
-            
-            For each trend you identify, provide:
-            - A clear, concise name for the trend
-            - A detailed description explaining the trend
-            - An assessment of the trend's strength (Emerging, Growing, Established, Declining)
-            - Supporting evidence from the articles
-            - An estimated timeframe for the trend (Short-term, Medium-term, Long-term)
-            
-            When identifying trends, consider:
-            - Recurring themes or topics across multiple articles
-            - Shifts in focus or emphasis within a topic
-            - New developments that could signal future directions
-            - Historical context when available
-            - Geographic and demographic patterns
-            
-            Also identify any meta-trends:
-            - These are higher-level patterns that connect multiple trends
-            - They often indicate broader societal or industry shifts
-            
-            Your output should be well-organized and provide genuine insights beyond what's immediately obvious.
-            Focus on quality over quantity - identify the most significant trends rather than listing everything.
-            
-            If there are fewer than 3 articles provided, note this limitation in your analysis.
-            If there are no articles provided, respond with a clear message indicating no articles are available
-            for trend analysis, and suggest what types of articles would be helpful to analyze in the future.
-            """,
-            tools=[],  # No tools needed for this agent
-            verbose=verbose,
-            model=model,
-            temperature=temperature
+            instructions=self.DEFAULT_INSTRUCTIONS,
+            tools=[WebSearchTool()], 
+            model=model, 
+            temperature=temperature,
+            verbose=verbose
         )
+        # Override logger
+        self.logger = get_logger("agent.trend")
         
         logger.info("TrendAgent initialized")
     
     def _process_output(self, output: str) -> TrendOutput:
         """Process the agent output into the proper format."""
-        import json
         import re
         
         try:
@@ -194,11 +181,11 @@ class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
             Identified trends and analysis
         """
         # Log input data details
-        logger.info(f"Running TrendAgent for category: {input_data.category}")
-        logger.info(f"Received {len(input_data.articles)} articles for trend analysis")
+        self.logger.info(f"Running TrendAgent for category: {input_data.category}")
+        self.logger.info(f"Received {len(input_data.articles)} articles for trend analysis")
         
         if len(input_data.articles) == 0:
-            logger.warning("No articles provided for trend analysis")
+            self.logger.warning("No articles provided for trend analysis")
             return TrendOutput(
                 trends=[],
                 meta_trends=[],
@@ -206,13 +193,13 @@ class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
             )
         
         if len(input_data.articles) < 3:
-            logger.warning(f"Received only {len(input_data.articles)} articles - limited trend analysis possible")
+            self.logger.warning(f"Received only {len(input_data.articles)} articles - limited trend analysis possible")
         
         # Log article titles to help with debugging
         for i, article in enumerate(input_data.articles):
             title = article.get("title", "No title")
             source = article.get("source", "Unknown")
-            logger.info(f"Article {i+1}: {title[:50]}... (source: {source})")
+            self.logger.info(f"Article {i+1}: {title[:50]}... (source: {source})")
         
         # Continue with regular processing
         return await super().run(input_data) 

@@ -13,6 +13,7 @@ from src.agents.writer_agent import WriterAgent, WriterInput
 from src.agents.analyst_agent import AnalystAgent, AnalystInput
 from src.agents.fact_checker_agent import FactCheckerAgent, FactCheckerInput
 from src.agents.trend_agent import TrendAgent, TrendInput
+from src.agents.finance_agent import FinanceAgent, FinanceInput, FinanceOutput, FinanceErrorOutput
 from src.config import get_logger
 from src.utils.tts import text_to_speech
 
@@ -39,6 +40,10 @@ class CoordinatorInput(BaseModel):
     )
     query: Optional[str] = Field(
         description="Keywords or phrase to search for in the news",
+        default=None
+    )
+    ticker_symbol: Optional[str] = Field(
+        description="Optional stock ticker symbol to fetch financial data for (e.g., AAPL, GOOGL)",
         default=None
     )
     voice: Optional[str] = Field(
@@ -87,18 +92,43 @@ class CoordinatorOutput(BaseModel):
     analysis: Optional[str] = Field(description="Analysis of the news")
     fact_check: Optional[str] = Field(description="Fact check results")
     trends: Optional[str] = Field(description="Identified trends")
+    financial_data: Optional[Dict[str, Any]] = Field(description="Financial data for the requested ticker symbol", default=None)
     agent_results: List[AgentResult] = Field(description="Results from individual agents", default_factory=list)
 
 class CoordinatorAgent:
     """Agent that coordinates the multi-agent news workflow."""
     
-    def __init__(self, verbose: bool = False, model: str = None, temperature: float = None):
+    def __init__(self, 
+                 verbose: bool = False, 
+                 model: str = None, 
+                 temperature: float = None,
+                 # Add model override arguments
+                 news_model_override: Optional[str] = None,
+                 analyst_model_override: Optional[str] = None,
+                 factchecker_model_override: Optional[str] = None,
+                 trend_model_override: Optional[str] = None,
+                 writer_model_override: Optional[str] = None):
         """Initialize the coordinator agent."""
         self.verbose = verbose
-        self.model = model
+        self.model = model # Default/fallback model
         self.temperature = temperature
-        logger.info("CoordinatorAgent initialized")
+        # Store overrides
+        self.model_overrides = {
+            "NewsAgent": news_model_override,
+            "AnalystAgent": analyst_model_override,
+            "FactCheckerAgent": factchecker_model_override,
+            "TrendAgent": trend_model_override,
+            "WriterAgent": writer_model_override
+        }
+        logger.info(f"CoordinatorAgent initialized with default model: {self.model}")
+        active_overrides = {k: v for k, v in self.model_overrides.items() if v}
+        if active_overrides:
+            logger.info(f"  Model overrides: {active_overrides}")
     
+    def _get_agent_model(self, agent_name: str) -> str:
+        """Get the appropriate model for a given agent, considering overrides."""
+        return self.model_overrides.get(agent_name) or self.model
+
     async def run(self, input_data: CoordinatorInput) -> CoordinatorOutput:
         """
         Run the multi-agent news workflow.
@@ -114,9 +144,11 @@ class CoordinatorAgent:
         # Step 1: Fetch and summarize news articles with the NewsAgent
         try:
             logger.info(f"Starting NewsAgent for category: {input_data.category}")
+            news_model = self._get_agent_model("NewsAgent")
+            logger.info(f"  (Using model: {news_model})")
             news_agent = NewsAgent(
                 verbose=self.verbose,
-                model=self.model,
+                model=news_model, # Use specific or fallback model
                 temperature=self.temperature
             )
             
@@ -251,87 +283,106 @@ class CoordinatorAgent:
                 success=False,
                 error=str(e)
             ))
-            # Return early if news fetching fails
-            return CoordinatorOutput(agent_results=agent_results)
-        
-        # Tasks for parallel execution
-        tasks = []
-        
-        # Step 2: Run the AnalystAgent to analyze the news
-        if input_data.analysis_depth:
-            tasks.append(self._run_analyst_agent(
-                category=news_result.category, 
-                articles=articles_data, 
-                summary=news_result.summary, 
+            # If news fails, we can't proceed with analysis agents
+            return CoordinatorOutput(agent_results=agent_results, error="Failed to retrieve news articles")
+
+        # If NewsAgent succeeded and we have articles, proceed with other agents
+        if agent_results[-1].success and articles_data:
+            # Step 2: Run analysis agents concurrently (Analyst, FactChecker, Trend)
+            analysis_tasks = []
+            
+            # Analyst Agent
+            analysis_tasks.append(self._run_analyst_agent(
+                category=news_result.category,
+                articles=articles_data,
+                summary=news_result.summary,
                 depth=input_data.analysis_depth
             ))
-        
-        # Step 3: Run the FactCheckerAgent if enabled
-        if input_data.use_fact_checker:
-            tasks.append(self._run_fact_checker_agent(
-                articles=articles_data, 
-                summary=news_result.summary, 
-                max_claims=input_data.max_fact_claims
-            ))
-        
-        # Step 4: Run the TrendAgent if enabled
-        if input_data.use_trend_analyzer:
-            tasks.append(self._run_trend_agent(
-                category=news_result.category, 
-                articles=articles_data
-            ))
-        
-        # Execute all tasks in parallel
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Error in one of the agent tasks: {str(result)}")
-                    continue
-                agent_results.append(result)
-        
-        # Step 5: Run the WriterAgent to create the final audio summary
-        audio_file = None
-        try:
-            if input_data.generate_audio:
-                logger.info(f"Creating audio summary with voice: {input_data.voice}")
+            
+            # Fact Checker Agent (optional)
+            if input_data.use_fact_checker:
+                analysis_tasks.append(self._run_fact_checker_agent(
+                    articles=articles_data,
+                    summary=news_result.summary,
+                    max_claims=input_data.max_fact_claims
+                ))
                 
-                # Get fact-checking and analysis results if available
-                fact_check_summary = None
-                analysis_insights = None
-                trends_summary = None
+            # Trend Analyzer Agent (optional)
+            if input_data.use_trend_analyzer:
+                analysis_tasks.append(self._run_trend_agent(
+                    category=news_result.category,
+                    articles=articles_data
+                ))
                 
-                for result in agent_results:
-                    if result.agent_name == "FactCheckerAgent" and result.success:
-                        fact_check_summary = result.data.get("summary")
-                    elif result.agent_name == "AnalystAgent" and result.success:
-                        analysis_insights = result.data.get("insights")
-                    elif result.agent_name == "TrendAgent" and result.success:
-                        trends_summary = result.data.get("summary")
-                
-                # Create an enhanced context for the writer
-                context = f"""
-                News Summary: {news_result.summary}
-                
-                {f"Fact Check: {fact_check_summary}" if fact_check_summary else ""}
-                
-                {f"Analysis: {analysis_insights}" if analysis_insights else ""}
-                
-                {f"Trends: {trends_summary}" if trends_summary else ""}
-                """
-                
+            # Run analysis tasks concurrently
+            analysis_agent_outputs = await asyncio.gather(*analysis_tasks)
+            agent_results.extend(analysis_agent_outputs)
+
+            # --- Add FinanceAgent execution here ---
+            finance_result_data = None
+            if input_data.ticker_symbol:
+                logger.info(f"Starting FinanceAgent for symbol: {input_data.ticker_symbol}")
+                try:
+                    finance_agent = FinanceAgent(verbose=self.verbose) # No model/temp needed
+                    finance_input = FinanceInput(symbol=input_data.ticker_symbol)
+                    finance_output = finance_agent.run_sync(finance_input) # Use run_sync
+                    
+                    if isinstance(finance_output, FinanceErrorOutput):
+                        agent_results.append(AgentResult(
+                            agent_name="FinanceAgent",
+                            success=False,
+                            error=finance_output.error
+                        ))
+                    else:
+                        finance_result_data = finance_output.model_dump()
+                        agent_results.append(AgentResult(
+                            agent_name="FinanceAgent",
+                            success=True,
+                            data=finance_result_data
+                        ))
+                except Exception as e:
+                    logger.error(f"Error running FinanceAgent for {input_data.ticker_symbol}: {e}")
+                    agent_results.append(AgentResult(
+                        agent_name="FinanceAgent",
+                        success=False,
+                        error=f"FinanceAgent failed: {str(e)}"
+                    ))
+            # ----------------------------------------
+
+            # Step 3: Prepare context and run WriterAgent
+            # Collect outputs from successful analysis agents
+            analysis_context = ""
+            fact_check_context = ""
+            trend_context = ""
+            
+            for result in agent_results:
+                if result.success:
+                    if result.agent_name == "AnalystAgent":
+                        analysis_context = result.data.get("insights", "")
+                    elif result.agent_name == "FactCheckerAgent":
+                        fact_check_context = result.data.get("summary", "")
+                    elif result.agent_name == "TrendAgent":
+                        trend_context = result.data.get("summary", "")
+            
+            # Combine context for the writer
+            # TODO: Decide if/how to include finance_result_data in writer context
+            combined_context = f"Original News Summary:\n{news_result.summary}\n\nAnalysis:\n{analysis_context}\n\nFact Check Summary:\n{fact_check_context}\n\nTrend Summary:\n{trend_context}"
+            
+            try:
+                logger.info("Starting WriterAgent")
+                writer_model = self._get_agent_model("WriterAgent")
+                logger.info(f"  (Using model: {writer_model})")
                 writer_agent = WriterAgent(
                     verbose=self.verbose,
-                    model=self.model,
+                    model=writer_model, # Use specific or fallback model
                     temperature=self.temperature
                 )
-                
                 writer_input = WriterInput(
-                    category=news_result.category,
-                    articles=articles_data,
-                    max_length=600,  # Target length for TTS
-                    style=input_data.summary_style,
-                    additional_context=context  # Pass the context to the writer agent
+                    context=combined_context,
+                    summary_style=input_data.summary_style,
+                    generate_audio=input_data.generate_audio,
+                    voice=input_data.voice,
+                    output_dir=None # Let the agent handle default/config
                 )
                 
                 writer_result = await writer_agent.run(writer_input)
@@ -340,57 +391,62 @@ class CoordinatorAgent:
                     agent_name="WriterAgent",
                     success=True,
                     data={
-                        "summary": writer_result.summary
+                        "final_summary": writer_result.final_summary,
+                        "markdown_output": writer_result.markdown_output,
+                        "audio_file": writer_result.audio_file
                     }
                 ))
                 
-                # Generate the audio file
-                audio_file = text_to_speech(
-                    text=writer_result.summary,
-                    voice=input_data.voice
+                # Step 4: Prepare final CoordinatorOutput
+                final_output = CoordinatorOutput(
+                    news_summary=writer_result.final_summary,
+                    audio_file=writer_result.audio_file,
+                    markdown=writer_result.markdown_output,
+                    analysis=analysis_context,
+                    fact_check=fact_check_context,
+                    trends=trend_context,
+                    financial_data=finance_result_data, # Include financial data here
+                    agent_results=agent_results
                 )
                 
-                if audio_file:
-                    logger.info(f"Generated audio file: {audio_file}")
+            except Exception as e:
+                logger.error(f"Error in WriterAgent: {str(e)}")
+                agent_results.append(AgentResult(
+                    agent_name="WriterAgent",
+                    success=False,
+                    error=str(e)
+                ))
+                # Still return partial results if WriterAgent fails
+                final_output = CoordinatorOutput(
+                    analysis=analysis_context,
+                    fact_check=fact_check_context,
+                    trends=trend_context,
+                    financial_data=finance_result_data,
+                    agent_results=agent_results,
+                    error="WriterAgent failed to generate final summary"
+                )
                 
-        except Exception as e:
-            logger.error(f"Error generating audio: {str(e)}")
-            agent_results.append(AgentResult(
-                agent_name="WriterAgent",
-                success=False,
-                error=str(e)
-            ))
+        else:
+            # Handle case where NewsAgent succeeded but found no articles
+            error_message = "NewsAgent ran but could not find or extract articles."
+            logger.warning(error_message)
+            final_output = CoordinatorOutput(agent_results=agent_results, error=error_message)
+
+        # Final logging of overall performance
+        successful_agents = [r.agent_name for r in agent_results if r.success]
+        failed_agents = [r.agent_name for r in agent_results if not r.success]
+        logger.info(f"Coordinator run finished. Success: {successful_agents}, Failed: {failed_agents}")
         
-        # Prepare the final output
-        analysis = None
-        fact_check = None
-        trends = None
-        
-        for result in agent_results:
-            if result.agent_name == "AnalystAgent" and result.success:
-                analysis = result.data.get("insights")
-            elif result.agent_name == "FactCheckerAgent" and result.success:
-                fact_check = result.data.get("summary")
-            elif result.agent_name == "TrendAgent" and result.success:
-                trends = result.data.get("summary")
-        
-        return CoordinatorOutput(
-            news_summary=news_result.summary,
-            audio_file=audio_file,
-            markdown=news_result.markdown,
-            analysis=analysis,
-            fact_check=fact_check,
-            trends=trends,
-            agent_results=agent_results
-        )
+        return final_output
     
     async def _run_analyst_agent(self, category: str, articles: List[Dict], summary: str, depth: str) -> AgentResult:
         """Run the analyst agent and return its result."""
         try:
-            logger.info(f"Starting AnalystAgent with depth: {depth}")
+            analyst_model = self._get_agent_model("AnalystAgent")
+            logger.info(f"Starting AnalystAgent with depth: {depth} (Using model: {analyst_model})")
             analyst_agent = AnalystAgent(
                 verbose=self.verbose,
-                model=self.model,
+                model=analyst_model, # Use specific or fallback model
                 temperature=self.temperature
             )
             
@@ -424,10 +480,11 @@ class CoordinatorAgent:
     async def _run_fact_checker_agent(self, articles: List[Dict], summary: str, max_claims: int) -> AgentResult:
         """Run the fact checker agent and return its result."""
         try:
-            logger.info(f"Starting FactCheckerAgent with max claims: {max_claims}")
+            factchecker_model = self._get_agent_model("FactCheckerAgent")
+            logger.info(f"Starting FactCheckerAgent with max claims: {max_claims} (Using model: {factchecker_model})")
             fact_checker_agent = FactCheckerAgent(
                 verbose=self.verbose,
-                model=self.model,
+                model=factchecker_model, # Use specific or fallback model
                 temperature=self.temperature
             )
             
@@ -459,7 +516,8 @@ class CoordinatorAgent:
     async def _run_trend_agent(self, category: str, articles: List[Dict]) -> AgentResult:
         """Run the trend agent and return its result."""
         try:
-            logger.info(f"Starting TrendAgent for category: {category}")
+            trend_model = self._get_agent_model("TrendAgent")
+            logger.info(f"Starting TrendAgent for category: {category} (Using model: {trend_model})")
             
             # Check if articles list is empty or None
             if not articles:
@@ -472,7 +530,7 @@ class CoordinatorAgent:
                 
             trend_agent = TrendAgent(
                 verbose=self.verbose,
-                model=self.model,
+                model=trend_model, # Use specific or fallback model
                 temperature=self.temperature
             )
             

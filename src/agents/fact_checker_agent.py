@@ -3,8 +3,9 @@
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 import logging
+import json
 
-from agents import function_tool
+from agents import function_tool, WebSearchTool
 from src.agents.base_agent import BaseAgent
 from src.config import get_logger
 
@@ -53,55 +54,39 @@ class FactCheckerOutput(BaseModel):
 class FactCheckerAgent(BaseAgent[FactCheckerInput, FactCheckerOutput]):
     """Agent that verifies factual claims in news articles."""
     
+    DEFAULT_INSTRUCTIONS = (
+        "You are a meticulous Fact Checker AI. Your goal is to identify key factual claims presented "
+        "in the provided news articles or summary and verify their accuracy. "
+        "Use the provided web search tool to find corroborating or conflicting evidence from reliable sources. "
+        "For each significant claim you identify (up to the specified maximum):\n"
+        "1. Clearly state the claim.\n"
+        "2. Briefly explain the verification process (e.g., 'Searched for [query]', 'Compared with [source]').\n"
+        "3. Assess the claim as 'Verified', 'Needs Context', or 'Unverified'.\n"
+        "4. Provide a concise explanation for your assessment, citing sources found using the web search tool where possible.\n"
+        "5. Rate your confidence level in the assessment (High, Medium, Low).\n"
+        "Finally, provide a brief overall summary of your findings.\n"
+        "Focus on objective, verifiable facts, not opinions or subjective statements."
+    )
+
     def __init__(self, verbose: bool = False, model: str = None, temperature: float = None):
         """Initialize the fact checker agent."""
         
         super().__init__(
             name="FactCheckerAgent",
-            instructions="""
-            You are an expert fact-checker with a commitment to accuracy and truth.
-            
-            Your task is to:
-            1. Identify key factual claims made in news articles and summaries
-            2. Assess the veracity of these claims based on internal consistency and context
-            3. Provide a nuanced assessment of each claim
-            4. Explain your reasoning for each assessment
-            
-            For each claim, provide:
-            - The exact claim being checked
-            - An assessment: Verified, Unverified, Misleading, False, or Needs Context
-            - A clear explanation of your assessment
-            - Your confidence level (Low, Medium, High)
-            
-            Guidelines for assessments:
-            - "Verified": Claim appears accurate based on the available information
-            - "Unverified": Insufficient information to determine accuracy
-            - "Misleading": Claim contains elements of truth but is presented in a way that could mislead
-            - "False": Claim contradicts available information
-            - "Needs Context": Claim is missing important context needed for proper understanding
-            
-            Important:
-            - Focus on factual claims, not opinions or predictions
-            - Be aware of the limitations of your knowledge
-            - Consider the reliability of the sources
-            - When multiple sources contradict each other, note this conflict
-            - Limit your analysis to the most significant claims (maximum specified in input)
-            
-            Your final output should include:
-            1. A list of verification results
-            2. A brief summary of your overall findings
-            """,
-            tools=[],  # No external tools needed
+            instructions=self.DEFAULT_INSTRUCTIONS,
+            tools=[WebSearchTool()],
             verbose=verbose,
             model=model,
             temperature=temperature
         )
         
+        # Override logger
+        self.logger = get_logger("agent.fact_checker")
+        
         logger.info("FactCheckerAgent initialized")
     
     def _process_output(self, output: str) -> FactCheckerOutput:
         """Process the agent output into the proper format."""
-        import json
         import re
         
         try:

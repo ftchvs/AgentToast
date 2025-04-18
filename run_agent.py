@@ -83,6 +83,8 @@ parser.add_argument("--sources", type=str, default=None,
                     help="Comma-separated list of news sources (e.g., bbc-news,cnn)")
 parser.add_argument("--query", type=str, default=None,
                     help="Keywords or phrase to search for")
+parser.add_argument("--ticker", type=str, default=None,
+                    help="Optional stock ticker symbol (e.g., AAPL, GOOGL) to fetch financial data")
 parser.add_argument("--page", type=int, default=None,
                     help="Page number for paginated results")
 parser.add_argument("--verbose", action="store_true", 
@@ -98,7 +100,19 @@ parser.add_argument("--play-audio", action="store_true",
 parser.add_argument("--agent", type=str, choices=["planner", "news", "coordinator", "all"], default="coordinator",
                     help="Agent to run (planner, news, coordinator, or all)")
 parser.add_argument("--model", type=str, choices=list(MODEL_CONFIG.keys()), default=MODEL_NAME,
-                    help="Model to use for agent execution")
+                    help="Default model to use for agent execution if specific agent model is not set")
+parser.add_argument("--news-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for NewsAgent")
+parser.add_argument("--planner-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for PlannerAgent")
+parser.add_argument("--analyst-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for AnalystAgent")
+parser.add_argument("--factchecker-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for FactCheckerAgent")
+parser.add_argument("--trend-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for TrendAgent")
+parser.add_argument("--writer-model", type=str, choices=list(MODEL_CONFIG.keys()), default=None,
+                    help="Model override for WriterAgent")
 parser.add_argument("--temperature", type=float, default=None,
                     help="Temperature setting for model (0.0-1.0)")
 parser.add_argument("--output-dir", type=str, default="output",
@@ -124,10 +138,14 @@ async def run_planner_agent(args):
     """Run the planner agent."""
     print("\nRunning Planner Agent...")
     
+    # Determine the model to use for this agent
+    planner_model = args.planner_model if args.planner_model else args.model
+    print(f"  (Using model: {planner_model})")
+
     # Initialize the agent with the specified model
     agent = PlannerAgent(
         verbose=args.verbose,
-        model=args.model,
+        model=planner_model,
         temperature=args.temperature
     )
     
@@ -166,10 +184,14 @@ async def run_news_agent(args):
     """Run the news agent."""
     print("\nRunning News Agent...")
     
+    # Determine the model to use for this agent
+    news_model = args.news_model if args.news_model else args.model
+    print(f"  (Using model: {news_model})")
+
     # Initialize the agent with the specified model
     agent = NewsAgent(
         verbose=args.verbose,
-        model=args.model,
+        model=news_model,
         temperature=args.temperature
     )
     
@@ -256,11 +278,21 @@ async def run_coordinator_agent(args):
     """Run the coordinator agent with all specialized agents."""
     print("\nRunning Coordinator with Multi-Agent Team...")
     
-    # Initialize the coordinator agent with the specified model
+    # Coordinator itself uses the main model, but passes overrides down
+    coordinator_model = args.model
+    print(f"  (Coordinator coordinating with model: {coordinator_model})")
+
+    # Initialize the coordinator agent, passing model overrides
     coordinator = CoordinatorAgent(
         verbose=args.verbose,
-        model=args.model,
-        temperature=args.temperature
+        model=coordinator_model, # Base model for coordinator/fallback
+        temperature=args.temperature,
+        # Pass specific model overrides
+        news_model_override=args.news_model,
+        analyst_model_override=args.analyst_model,
+        factchecker_model_override=args.factchecker_model,
+        trend_model_override=args.trend_model,
+        writer_model_override=args.writer_model
     )
     
     # Prepare input
@@ -270,6 +302,7 @@ async def run_coordinator_agent(args):
         country=args.country,
         sources=args.sources,
         query=args.query,
+        ticker_symbol=args.ticker,
         voice=args.voice,
         generate_audio=not args.no_audio,
         summary_style=args.summary_style,
@@ -435,6 +468,15 @@ Status: {"✓ Success" if agent_result.success else "✗ Failed"}
         print(result.trends)
         print("-"*60)
     
+    # Print financial data if available
+    if result.financial_data:
+        print("\n" + "="*60)
+        print(f"FINANCIAL DATA: {result.financial_data.get('symbol', 'N/A').upper()}")
+        print("="*60)
+        # Pretty print the JSON data
+        print(json.dumps(result.financial_data, indent=2))
+        print("-"*60)
+    
     # Display audio information if generated
     if result.audio_file:
         print(f"\nAudio summary generated: {result.audio_file}")
@@ -449,6 +491,27 @@ Status: {"✓ Success" if agent_result.success else "✗ Failed"}
                 subprocess.run(cmd, shell=True)
             except Exception as e:
                 print(f"Error playing audio: {str(e)}")
+    
+    # Print trace information if available
+    if traces:
+        print("\nTrace Information:")
+        for trace in traces:
+            print(f"- {trace['name']}: {trace['trace_id']}")
+    
+    # Print specific model overrides if set
+    overrides = {
+        "NewsAgent": args.news_model,
+        "PlannerAgent": args.planner_model,
+        "AnalystAgent": args.analyst_model,
+        "FactCheckerAgent": args.factchecker_model,
+        "TrendAgent": args.trend_model,
+        "WriterAgent": args.writer_model,
+    }
+    active_overrides = {name: model for name, model in overrides.items() if model}
+    if active_overrides:
+        print("Model Overrides:")
+        for name, model in active_overrides.items():
+            print(f"  - {name}: {model}")
     
     return result
 
@@ -512,18 +575,35 @@ async def main():
         print(f"Sources: {args.sources}")
     if args.query:
         print(f"Query: {args.query}")
+    if args.ticker:
+        print(f"Ticker: {args.ticker}")
     if args.page:
         print(f"Page: {args.page}")
     print(f"Voice: {args.voice}")
     print(f"Generate audio: {'yes' if not args.no_audio else 'no'}")
     if args.play_audio:
         print(f"Play audio: yes")
-    print(f"Model: {model_display_name}")
+    print(f"Default Model: {model_display_name}")
     if args.temperature is not None:
         print(f"Temperature: {args.temperature}")
     
+    # Print specific model overrides if set
+    overrides = {
+        "NewsAgent": args.news_model,
+        "PlannerAgent": args.planner_model,
+        "AnalystAgent": args.analyst_model,
+        "FactCheckerAgent": args.factchecker_model,
+        "TrendAgent": args.trend_model,
+        "WriterAgent": args.writer_model,
+    }
+    active_overrides = {name: model for name, model in overrides.items() if model}
+    if active_overrides:
+        print("Model Overrides:")
+        for name, model in active_overrides.items():
+            print(f"  - {name}: {model}")
+    
     # Analysis options
-    if args.agent == "coordinator":
+    if args.agent == "coordinator" or args.agent == "all":
         print(f"Analysis depth: {args.analysis_depth}")
         print(f"Fact checking: {'disabled' if args.no_fact_check else 'enabled'}")
         print(f"Trend analysis: {'disabled' if args.no_trend_analysis else 'enabled'}")
