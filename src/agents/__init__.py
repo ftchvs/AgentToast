@@ -1,14 +1,15 @@
 """AgentToast agents package."""
 
 from .base_agent import BaseAgent
+from .news_agent import NewsAgent
 from .planner_agent import PlannerAgent
-from .example_agent import NewsAgent, NewsRequest, NewsArticle, NewsSummary
+from .writer_agent import WriterAgent
+from .analyst_agent import AnalystAgent
 
 __all__ = [
     'BaseAgent',
-    'PlannerAgent',
     'NewsAgent',
-    'NewsRequest',
-    'NewsArticle', 
-    'NewsSummary'
+    'PlannerAgent',
+    'WriterAgent',
+    'AnalystAgent'
 ] 

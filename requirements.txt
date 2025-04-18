@@ -1,21 +1,28 @@
-openai>=1.12.0
-python-dotenv>=1.0.0
-pydantic>=2.5.0
-openai-agents>=0.0.8
+openai>=1.35.13
+python-dotenv>=1.0.1
+pydantic>=2.0
 newsapi-python>=0.2.7
 pytest>=8.0.0
 python-jose>=3.3.0
-requests>=2.31.0
-inquirer>=3.1.3  # For interactive CLI
-langsmith
+requests>=2.26.0
+inquirer>=3.2.4
+langsmith>=0.1.84
 termcolor
-beautifulsoup4
+beautifulsoup4>=4.9.3
 markdownify
 tiktoken
 rich
 psutil
-yfinance
+yfinance>=0.2.40
+argparse>=1.4.0
+matplotlib>=3.9.1
+pandas>=2.2.2
+weasyprint
 
 # For audio processing and playback
 mpg123>=0.4  # For Linux audio playback
 # For Mac and Windows, no additional packages needed 
+
+# For OpenAI Agents SDK
+openai-agents @ git+https://github.com/openai/openai-agents-python@v0.0.10#egg=openai-agents
+markdown # For Markdown to HTML conversion

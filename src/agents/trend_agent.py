@@ -52,20 +52,22 @@ class TrendOutput(BaseModel):
 class TrendAgent(BaseAgent[TrendInput, TrendOutput]):
     """Agent responsible for identifying trends across multiple news articles."""
 
-    DEFAULT_INSTRUCTIONS = (
-        "You are a Trend Analysis AI. Your goal is to identify emerging, growing, or established trends "
-        "based on a collection of news articles within a specific category. "
-        "Use the web search tool to validate potential trends, find supporting evidence beyond the provided articles, or discover related emerging patterns. "
-        "For each trend identified:\n"
-        "1. Describe the trend clearly.\n"
-        "2. Classify its strength (e.g., Emerging, Growing, Established).\n"
-        "3. Estimate its timeframe (e.g., Short-term, Medium-term, Long-term).\n"
-        "4. Provide supporting evidence, citing the articles or web search results.\n"
-        "5. Briefly explain the potential implications of the trend.\n"
-        "Also, identify any potential \"meta-trends\" that connect multiple individual trends. "
-        "Finally, provide a concise overall summary of the key trends discovered.\n"
-        "Focus on patterns supported by evidence."
-    )
+    DEFAULT_INSTRUCTIONS = ("""
+You are a Trend Analysis AI. Your role is to identify emerging or ongoing trends based on the provided news articles for a specific category.
+
+Analyze the content, themes, and frequency of topics mentioned in the articles.
+**Use the provided WebSearchTool** to research the identified topics and determine if they represent broader, significant trends beyond just these specific articles. Look for corroborating evidence or related patterns online.
+
+Identify 3-5 key trends. For each trend:
+1.  Name the trend concisely.
+2.  Describe the trend briefly, explaining why it's significant, incorporating insights from your web search if applicable.
+3.  Provide supporting evidence or examples (from articles or web search results).
+
+Also, try to identify any potential 'meta-trends' (trends about trends) if applicable.
+Finally, provide a brief overall summary of the identified trends.
+
+Format your final output as a JSON object with keys 'trends' (a list of trend objects, each with 'name', 'description', 'evidence') and 'summary'.
+""")
 
     def __init__(
         self,
